@@ -1,0 +1,33 @@
+*.egg
+*.egg-info
+*.pyc
+*.db
+*.sqlite
+*.sql
+*.cache
+*.lock
+*.log
+*.swp
+*.pid
+
+# Some Pylons-generated directories that should be ignored
+/dist/
+/data/
+/build/
+
+# Some OLD-specific directories that should be ignored
+/store/
+/old
+
+# Some old_parser_research directories that should be ignored
+/localstore
+/resources
+/detritus
+/notes
+
+# Pickle store of information gathered by the researcher
+record.pickle
+
+# OLD Pylons config file (no reason to publish this)
+config.ini
+
