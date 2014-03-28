@@ -59,7 +59,8 @@ log = Log()
 class BlackfootParserResearcher(ParserResearcher):
     """Researches the creation of effective morphological parsers for Blackfoot.
 
-    Warning, there is a lot of ad hoc functionality here.
+    Warning, there are a lot of Blackfoot-specific assumptions and values in 
+    this script. It may be useful as an example.
 
     This class has several Blackfoot OLD-specific methods for doing parser-
     related research. In general, it creates OLD objects on the OLD web service
@@ -1226,7 +1227,7 @@ class BlackfootParserResearcher(ParserResearcher):
 
         .. note::
 
-            I am including character that are not standard in the Frantz-ian Bf
+            I am including characters that are not standard in the Frantz-ian Bf
             inventory in the set of deal breakers. This is potentially
             problematic for two reasons:
 
@@ -1397,6 +1398,8 @@ if __name__ == '__main__':
 
     # Get the command-line arguments
     ################################################################################
+
+    # Basic usage: ./blackfoot_research.py -u USERNAME -p PASSWORD -H HOST -P PORT
 
     parser = optparse.OptionParser()
     parser.add_option("-u", "--username", default="old",

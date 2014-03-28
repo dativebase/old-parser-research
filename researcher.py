@@ -96,6 +96,7 @@ class ParserResearcher(object):
                 password)
             sys.exit()
 
+    # This is what is stored in record.pickle
     default_record = {
         'searches': {},
         'corpora': {},
