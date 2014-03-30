@@ -603,6 +603,13 @@ class ParserResearcher(object):
 
         return self.get_parse_module(parser).phonology.applydown(morpheme_sequences)
 
+    def clean_transcription(self, transcription):
+        """This method cleans transcriptions of certain characters. It will probably be
+        overridden in language-specific researcher subclasses.
+
+        """
+        return transcription
+
     def inspect_parses(self, parser, parses, corpus_dict, corpus_id):
         """Iterate through parses and return a dict and a set:
 
@@ -613,12 +620,13 @@ class ParserResearcher(object):
         :param dict corpus_dict: keys are (uncleaned) transcriptions and values are list triples
             comprised of the word's morpho-phonemic transcription, its glosses and its categories.
         :param int corpus_id: the id of the corpus whose parses are being inspected.
-        :returns: a 2-tuple consisting of objects that constitute a record of failed parses.  The
+        :returns: a 2-tuple consisting of objects that constitute a record of failed parses. The
             ``morpheme_sequences`` dict has sequences of user-supplied morpheme forms as keys
             and corresponding user-supplied transcriptions as values.  The ``category_sequences``
             set holds the sequences of categories and delimiters corresponding to these unparsed
-            transcriptions.  Finally, as a side-effect, prettily write unparsed transcriptions
-            (and any user-provided parses) to disk.
+            transcriptions.
+        :side-effects: prettily write unparsed transcriptions (and any user-provided parses) to disk,
+            e.g., in /localhost/parsers/parser_1/unparsed_corpus_1.txt
 
         """
 
@@ -681,11 +689,13 @@ class ParserResearcher(object):
                         f.write('phonology %-30s-> None\n\n' % morpheme_sequence)
         log.info('Saved phonological failures to %s.' % file_path)
 
-    def evaluate_parse(self, parses, corpus_dict, vocal=False):
-        """Print out the fraction of transcriptions that received a parse.
+    def evaluate_parse(self, parses, corpus_dict, Parse, vocal=False):
+        """Evaluate a parse.
 
-        :param dict parses: keys are transcriptions, values are ``parser.Parse`` instances.
-        :returns: a unicode string report of the fraction and percent parsed.
+        :param dict parses: keys are transcriptions, values are 2-tuples: (parser.Parse(), [c1, c2, ...]).
+        :param dict corpus_dict: keys are transcriptions, values are [break, gloss, category] triples (lists).
+        :param class Parse: the Parse class from the parser module.
+        :returns: a dict summarizing the success of the parser on a particular corpus.
 
         """
 
@@ -697,27 +707,32 @@ class ParserResearcher(object):
         correct_mp = []
         incorrect_mp = []
         no_gen = []
+        # Precision and recall; precision = correct_proposed_morphemes / total_proposed_morphemes
+        # recall = correct_proposed_morphemes / total_actual_morphemes
+        correct_proposed_morphemes = 0
+        total_proposed_morphemes = 0
+        total_actual_morphemes = 0
         for transcription, (parse_object, candidates) in parses.iteritems():
             cleaned_transcription = self.clean_transcription(transcription)
+            no_gold = [u'nada', u'nada', u'nada']
             gold_parse = filter(None,
                 corpus_dict.get(transcription,
-                                corpus_dict.get(cleaned_transcription, [u'nada', u'nada', u'nada'])))
+                                corpus_dict.get(cleaned_transcription, no_gold)))
+            gold_parse_object = Parse(gold_parse)
+            total_actual_morphemes += len(gold_parse_object.morphemes)
             if parse_object.parse:
+                total_proposed_morphemes += len(parse_object.morphemes)
+                correct_proposed_morphemes += len([m for m in parse_object.morphemes if m in gold_parse_object.morphemes])
                 candidates_generated += 1
                 if parse_object.triplet == gold_parse:
                     correctly_parsed += 1
-                    #print '%s correctly parsed as %s' % (transcription, u' '.join(gold_parse))
                     correct.append((transcription, gold_parse))
                 if gold_parse in [c.triplet for c in candidates]:
                     morphophonology_success += 1
                     if parse_object.triplet != gold_parse:
                         correct_mp.append((transcription, gold_parse))
-                    #print '%s correct candidate "%s" generated: "%s"' % (transcription,
-                    #    u' '.join(gold_parse), u'", "'.join([u' '.join(c.triplet) for c in candidates]))
                 else:
                     incorrect_mp.append((transcription, gold_parse, candidates))
-                    #print '%s correct candidate "%s" NOT generated: "%s"' % (transcription,
-                    #    u' '.join(gold_parse), u'", "'.join([u' '.join(c.triplet) for c in candidates]))
             else:
                 no_gen.append((transcription, gold_parse))
         if vocal:
@@ -743,6 +758,11 @@ class ParserResearcher(object):
         except ZeroDivisionError:
             lm_success_percent = 0.0
 
+        # Precision and recall; precision = correct_proposed_morphemes / total_proposed_morphemes
+        # recall = correct_proposed_morphemes / total_actual_morphemes
+        precision = P = self.safe_div(correct_proposed_morphemes, total_proposed_morphemes)
+        recall = R = self.safe_div(correct_proposed_morphemes, total_actual_morphemes)
+        f_measure = self.safe_div((2 * P * R), (P + R))
         return {
             'attempted_count': n,
 
@@ -755,9 +775,18 @@ class ParserResearcher(object):
             'morphophonology_success': morphophonology_success,
             'morphophonology_success_percent': 100 * morphophonology_success / float(n),
 
-            'lm_success_percent': lm_success_percent
+            'lm_success_percent': lm_success_percent,
+
+            'precision': P,
+            'recall': R,
+            'f_measure': f_measure
         }
 
+    def safe_div(self, numer, denom):
+        try:
+            return numer / float(denom)
+        except ZeroDivisionError:
+            return 0.0
 
     def get_user_contributions(self, force_recreate=False):
         """Request the users of the OLD app and count their forms entered and elicited.
@@ -819,10 +848,30 @@ class ParserResearcher(object):
         #'morphophonology_success': morphophonology_success,
         #'morphophonology_success_percent': 100 * morphophonology_success / float(n),
 
+    def parse_corpus(self, parser, corpus, batch_size=0):
+        """Parse all of the transcriptions in the locally saved corpus using the
+        locally saved parser.
+
+        """
+        print 'in parse_corpus in researcher.py'
+        corpus_list = cPickle.load(open(corpus['local_copy_path'], 'rb'))
+        transcriptions = list(set([t for t, m, g, c in corpus_list]))
+        log.info('About to parse all %s unique transcriptions in corpus "%s".' % (
+            len(transcriptions), corpus['name']))
+        start_time = time.time()
+        parses = self.parse_locally(parser, transcriptions, batch_size)
+        end_time = time.time()
+        log.info('Time elapsed: %s' % self.old.human_readable_seconds(end_time - start_time))
+        return parses, corpus_list
+
     def evaluate_parser_against_corpora(self, parser, corpora, **kwargs):
         """Use ``parser`` to parse all corpora in the ``corpora`` dict, save
         unparsed words to disk, save phonology failures to disk, and print a
         summary of the parser's success on each corpus.
+
+        :param object parser: parser object.
+        :param dict corpora: keys are corpus names and values are corpus metadata.
+        :returns: a list of dicts summarizing the parse results on each corpus.
 
         """
 
@@ -832,6 +881,7 @@ class ParserResearcher(object):
         force_recreate = kwargs.get('force_recreate', False)
         vocal = kwargs.get('vocal', False)
 
+        # E.g., self.record['parse_summaries'][48][273] is a summary of the success of parser 48 on corpus 273
         key = 'parse_summaries'
         record = self.record.get(key, {}).get(parser['id'], {})
 
@@ -846,20 +896,25 @@ class ParserResearcher(object):
 
             # Parse the corpus of words
             parses, corpus_list = self.parse_corpus(parser, corpus, batch_size)
-            corpus_dict = dict((t, [b, g, c]) for t, b, g, c in corpus_list)
+            corpus_dict = dict((self.clean_transcription(t), [b, g, c]) for t, b, g, c in corpus_list)
 
-            # Find out what's going wrong
+            # Here we do stuff to try to figure out what's going wrong with the parser.
 
             # Get the morpheme and category sequences of the words that could not be parsed;
             # also, save unparsed transcriptions to disk.
+            # morpheme_sequences: a dict, keys are sequences of user-supplied morpheme shapes, values are the corresponding user-supplied transcriptions.
+            # category_sequences: a set of sequences of categories and delimiters corresponding to the unparsed transcriptions.
             morpheme_sequences, category_sequences = self.inspect_parses(
                 parser, parses, corpus_dict, corpus['id'])
 
             # ``evaluation`` is a dict holding stats about the success of the parser on the corpus
-            evaluation = self.evaluate_parse(parses, corpus_dict, vocal)
+            parse_module = self.get_parse_module(parser)
+            Parse = parse_module.Parse
+            evaluation = self.evaluate_parse(parses, corpus_dict, Parse, vocal=vocal)
 
             if test_phonology:
                 # Map morpheme sequences to phonologizations, i.e., transcriptions.
+                # WARNING: where phonologies take gloss and category information into account, this will fail ...
                 phonologizations = self.phonologize_locally(parser, morpheme_sequences.keys())
 
                 # Write phonological failures to disk.

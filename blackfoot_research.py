@@ -1078,6 +1078,8 @@ class BlackfootParserResearcher(ParserResearcher):
 
         # Test the parser via request
         parses = self.parse(parser, transcriptions.keys())
+        print parses
+        print transcriptions
         assert parses == transcriptions
         log.info('Parser "%s" parses correctly via request.' % parser['name'])
 
@@ -1291,7 +1293,7 @@ class BlackfootParserResearcher(ParserResearcher):
         3.
 
         """
-
+        print 'in parse_corpus in blackfoot_research.py'
         corpus_list = cPickle.load(open(corpus['local_copy_path'], 'rb'))
         transcriptions = self.clean_corpus(corpus_list)
         log.info('About to parse all %s unique transcriptions in corpus "%s".' % (
@@ -1394,6 +1396,38 @@ class BlackfootParserResearcher(ParserResearcher):
             self.old.post('forms', params)
 
 
+    def pretty_print_parse_summaries(self, parse_summaries):
+        summaries = {}
+        for summary in parse_summaries:
+            key = u'%-9s %-30s %-7s' % (
+                    summary['type'],
+                    u'%s %s (#%s)' % (summary['relation'], summary['entity'], summary['id']),
+                    u'%s' % summary['attempted_count'])
+            summaries.setdefault(key, {})
+            summaries[key].setdefault('correctly_parsed_percent', []).\
+                                append(summary['correctly_parsed_percent'])
+            summaries[key].setdefault('morphophonology_success_percent', []).\
+                                append(summary['morphophonology_success_percent'])
+            summaries[key].setdefault('phonology_success_percent', []).\
+                                append(summary.get('phonology_success_percent', 0.0))
+            summaries[key].setdefault('lm_success_percent', []).\
+                                append(summary['lm_success_percent'])
+        for summary in sorted(summaries.keys()):
+            correctly_parsed_percent = u'    '.join(
+                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['correctly_parsed_percent']])
+            morphophonology_success_percent = u'    '.join(
+                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['morphophonology_success_percent']])
+            phonology_success_percent = u'    '.join(
+                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['phonology_success_percent']])
+            lm_success_percent = u'    '.join(
+                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['lm_success_percent']])
+
+            print u'%s    %s    %s    %s    %s' % (
+                summary, correctly_parsed_percent, morphophonology_success_percent,
+                lm_success_percent, phonology_success_percent)
+
+
+
 if __name__ == '__main__':
 
     # Get the command-line arguments
@@ -1431,7 +1465,7 @@ if __name__ == '__main__':
     # Silence the log! (or not)
     log.silent = False
 
-    # Determines whether resources are regenerated/recreated/recompiled even
+    # GLOBAL: Determines whether resources are regenerated/recreated/recompiled even
     # when said resources have been persisted.
     force_recreate = False
 
@@ -1445,6 +1479,11 @@ if __name__ == '__main__':
     # Research!
     ################################################################################
 
+    #sam_phonology = researcher.create_phonology(u'sam1', u'define phonology a;')
+    #researcher.old.delete('phonologies/46')
+    #researcher.old.delete('morphologies/57')
+    #researcher.old.delete('morphemelanguagemodels/37')
+    #researcher.old.delete('morphologicalparsers/47')
 
     # Corpora
     ################################################################################
@@ -1454,15 +1493,15 @@ if __name__ == '__main__':
     # I.e., researcher.record['corpora'] wil contain the corpus metadata and
     # localstore/corpora will contain the corpus pickles.
     #corpora = researcher.create_corpora(force_recreate=force_recreate)
+    corpora = researcher.record['corpora']
 
     # Restrict what we're working with to a subset of the corpora just created, if desired.
-    corpora = dict((key, value) for key, value in researcher.record['corpora'].iteritems()
-                   if 'local_copy_path' in value and value['id'] == 273)
-    # 218 is Bliss 96-word corpus
-    # 233 is Dunham entered well analyzed corpus
-    # 221 is Dunham elicited well analyzed corpus
-    # 226 is Louie elicited analyzed corpus (1,198 words)
-    # 273 is Weber 2013 forms (79 forms)
+    #corpora = dict((key, value) for key, value in researcher.record['corpora'].iteritems()
+    #               if 'local_copy_path' in value and value['id'] == 273)
+    #corpus_name = u'Corpus of forms, with elicitor last_name as Dunham, that contain well analyzed Blackfoot words'
+    corpus_name = u'Corpus of forms that contain well analyzed Blackfoot words'
+    corpora_subset = dict((key, value) for key, value in corpora.iteritems()
+            if 'local_copy_path' in value and value['name'] == corpus_name)
 
 
     # Toy Parser
@@ -1480,15 +1519,36 @@ if __name__ == '__main__':
     # * LM: sentential forms corpus
     # * takes up to 5 minutes to create, generate, and compile
 
-    # Create a morphological parser for Blackfoot and make sure it works.
+    # Create a morphological parser for Blackfoot
     parser_1 = researcher.create_parser_1(force_recreate=force_recreate)
-    researcher.test_parser(parser_1)
 
-    # Test the parser against all corpora and print a summary.
-    # WARNING: no caching here, takes about 2-3 mins ...
-    parser_1_summaries = researcher.evaluate_parser_against_corpora(parser_1,
-        corpora, force_recreate=True, get_phonology_success=True,
+    # Run a test to ensure that the parser functions at a minimal level.
+    #researcher.test_parser(parser_1)
+
+    # Test the parser against all corpora and generate a list of success/failure summaries
+    # for each parser-corpus pair. WARNING: takes about 2-3 mins. However, the summaries are
+    # cached and the cached data can be retrieved by setting ``force_recreate`` to False.
+    parser_summaries = researcher.evaluate_parser_against_corpora(parser_1,
+        corpora_subset, force_recreate=True, get_phonology_success=True,
         test_phonology=True)
+    print parser_summaries
+    #parser_summaries = [ps for ps in parser_summaries
+    #    if ps['relation'] == 'all' and ps['type'] == 'well']
+
+    # Notes:
+    # It took 14m18s (i.e., 858s) to parse the 1,357 unique words in the corpus of
+    # forms, with elicitor last_name as Dunham, that contain well analyzed Blackfoot
+    # words. That's 1.58 words per second.
+    # It took 53m22s (i.e., 3,202s) to parse all 6,577 unique transcriptions in
+    # the corpus of forms that contain well analyzed Blackfoot words. That's 2.02 words per second.
+    # It took 61m45s (i.e., 3,705s) to parse all 8,431 unique transcriptions in
+    # the corpus of forms that contain Blackfoot words. That's 2.28 words per second.
+    # well      elicitor Dunham, (#298)        1357       8.47%    9.87%    85.82%    10.92%
+    # well      all  (#277)                    6577       8.27%    9.59%    86.21%    16.80%
+    # well      all  (#277)                    6577       1.64%    9.59%    17.12%    16.80%
+    researcher.pretty_print_parse_summaries(parser_summaries)
+
+
 
     """
 
@@ -1604,37 +1664,8 @@ if __name__ == '__main__':
     parser_9_summaries = researcher.evaluate_parser_against_corpora(parser_9, corpora,
         test_phonology=False, get_phonology_success=False, vocal=True, force_recreate=True)
 
+
     """
-
-    all_parse_summaries = parser_1_summaries
-    summaries = {}
-    for summary in all_parse_summaries:
-        key = u'%-9s %-30s %-7s' % (
-                summary['type'],
-                u'%s %s (#%s)' % (summary['relation'], summary['entity'], summary['id']),
-                u'%s' % summary['attempted_count'])
-        summaries.setdefault(key, {})
-        summaries[key].setdefault('correctly_parsed_percent', []).\
-                            append(summary['correctly_parsed_percent'])
-        summaries[key].setdefault('morphophonology_success_percent', []).\
-                            append(summary['morphophonology_success_percent'])
-        summaries[key].setdefault('phonology_success_percent', []).\
-                            append(summary.get('phonology_success_percent', 0.0))
-        summaries[key].setdefault('lm_success_percent', []).\
-                            append(summary['lm_success_percent'])
-    for summary in sorted(summaries.keys()):
-        correctly_parsed_percent = u'    '.join(
-            [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['correctly_parsed_percent']])
-        morphophonology_success_percent = u'    '.join(
-            [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['morphophonology_success_percent']])
-        phonology_success_percent = u'    '.join(
-            [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['phonology_success_percent']])
-        lm_success_percent = u'    '.join(
-            [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['lm_success_percent']])
-
-        print u'%s    %s    %s    %s    %s' % (
-            summary, correctly_parsed_percent, morphophonology_success_percent,
-            lm_success_percent, phonology_success_percent)
 
 
     # TODO: create a Louie parser that crucially contains a lexicon that contains all of the 
