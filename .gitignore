@@ -21,7 +21,6 @@
 
 # Some old_parser_research directories that should be ignored
 /localstore
-/resources
 /detritus
 /notes
 

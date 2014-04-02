@@ -1,0 +1,44 @@
+#test áaksikokotowa -> áa.ksi.ko.ko.to.wa
+#test anni -> an.ni
+#test iisápikinao'tomoyiiwa -> ii.sá.pi.ki.nao'.to.mo.yii.wa
+#test áí'tamáaksi'niwa -> áí'.ta.máa.ksi'.ni.wa
+#test nítohtoisskimaa -> ní.toh.tois.ski.maa
+#test nitsíítoyó'kiooka -> ni.tsíí.to.yó'.kioo.ka
+#
+#test kaaáhsa -> kaa.áh.sa
+#test kaaáhs -> kaa.áhs
+#test kaaahs -> kaa.ahs
+#test tatáhs -> tat.áhs
+#test nitsíístsai'noawa -> ni.tsíís.tsai'.no.a.wa
+#test stámohkanook -> stá.moh.ka.nook
+
+define vowels       [ a | i | o | á | ó | í ] ;
+define vocoids      vowels | s ;
+define stops        [ p | t | k | "'" ] ;
+define fricatives   [ s | h ] ;
+define nasals       [ m | n ] ;
+define affricates   [ t s | k s ] ;
+define glides       [ w | y ] ;
+define consonants   stops | fricatives | nasals | affricates | glides ;
+
+#define onset [ p | t s | k s | m | n | t | k | s | "'" | y | w ] ;
+#define nucleus [ a | i | o | á | ó | í ] ([ a | i | o | á | ó | í | s ]) | s ;
+#define coda  [ h | s | "'" ] [ p | t | k | t s | k s ] |
+#             [ p | t | k | m | n | t s | k s | s | "'" | y | w | h ] ;
+define onset        consonants - h ;
+define nucleus      [ vowels (vocoids) | s ] ;
+define coda         [[ fricatives | "'" ] stops - "'" | fricatives ] |
+                    consonants ;
+
+define syllable         onset nucleus (coda) ;
+define syllableNoOnset  nucleus (coda) ;
+
+define syllabify [
+    syllable        @> ... "." || _ syllable .o.
+    syllableNoOnset @> ... "." || _ syllable .o.
+    "."             -> 0       || "#" s _ .o.
+    "." s s "."     -> s "." s || vowels _ .o.
+    [..]            -> "."     || o _ a ] ;
+
+define phonology syllabify ;
+

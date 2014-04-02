@@ -1,0 +1,751 @@
+################################################################################
+# A Blackfoot phonology that operates on string representations of rich
+# morphemes.  Based on the phonology of Frantz (1991) with accent-placement rules
+# of Weber (2013).
+################################################################################
+
+define graphs                   [ p | t | k | m | n | s | w | y | h | "'" | a | i | o | á | í | ó ] ;
+define vowels                   [ a | i | o | á | í | ó ] ;
+define accentedVowels           [ á | í | ó ] ;
+define unaccentedVowels         vowels - accentedVowels ;
+define unaccentedGraphs         graphs - accentedVowels ;
+define nasals                   [ m | n ] ;
+define glides                   [ w | y ] ;
+define plosives                 [ p | t | k ] ;
+define fricatives               [ s | h ] ;
+define affricates               [ t s | k s ] ;
+define geminates                [ p p | t t | k k | m m | n n ] ;
+define vocoids                  vowels | s ;
+define obstruents               plosives | nasals | s ;
+define stops                    plosives | "'" ;
+define sonorants                nasals | glides ;
+define buccalSimplexConsonants  obstruents | glides ;
+define simplexConsonants        stops | nasals | fricatives | glides ;
+define consonants               simplexConsonants | affricates ;
+
+
+# 1.    C1-C2     ->     C2C2
+# Gemination
+define gemination plosives "-" -> p || _ p .o.
+                  plosives "-" -> t || _ t .o.
+                  plosives "-" -> k || _ k ;
+
+# 2.    It    ->    Ist
+# s-Insertion (assumes that "breaking I" is a phoneme)
+define sInsertion [..] -> s || I _ t ;
+
+# 3.a.    C-s    ->    Css
+# s-Connection A
+define sConnectionA "-" -> s || [ plosives | nasals ] _ s ;
+
+# 3.b.    V(')-s    ->    V(')-is
+# s-Connection B
+# condition: where 's' is not part of a suffix
+# present implementation: rule is optional
+define sConnectionB [..] (->) i || vowels ("'") "-" _ s ;
+
+# 4.    o-a    ->    aa
+# New o-Replacement
+# note: for some speakers the o is deleted
+# condition: where 'a' is not part of a suffix
+# present implementation: rule is optional
+define oReplacement [
+    o o           (->) [ a a | a | á á | á ] ,
+    o             (->) [ a | 0 ] ,
+    ó ó           (->) [ á á | á ] ,
+    ó             (->) [ á | 0 ]                    || _ "-" [ a | á ] ] ;
+
+# 5.    w-i(i)    ->    o
+# New Coalescence
+define coalescence [
+    w "-" i (i) -> o ,
+    w "-" í (í) -> ó || _ ("-") simplexConsonants ] ;
+
+# 6.    k-I    ->    ksi,    k-i    ->    ksi, optionally
+define breaking "-" -> s   || k _ I .o.
+                "-" (->) s || k _ [i | í] , p _ I ;
+
+# 7.    I -> i
+# Neutralization
+define neutralization I -> i ;
+
+# 8.a.    V-iV    ->    VyV
+# Desyllabification A
+# Note the alteration to this rule: now glides form optionally between C and V ...
+define desyllabificationA "-" i -> y || vowels _ [ a | á | o | ó ] .o.
+                          "-" i (->) y || obstruents _ ("-") [ a | á | o | ó ];
+
+# 8.b.    CVoV    ->    CVwV
+# Desyllabification B
+define desyllabificationB o -> w   || buccalSimplexConsonants ("-") vowels ("-") _ ("-") [ a | á | i | í | ó ] .o.
+                          "-" -> y || buccalSimplexConsonants o _ [ a | á | i | í | ó ] ;
+
+# 9.    #G    ->    0
+# Semivowel Drop
+define semivowelDrop glides -> 0 || .#. _ ;
+
+# 10.    V1V1-V    ->    V1V
+# Vowel Shortening
+define vowelShortening [ a | á ] -> 0 || [ a | á ] _ "-" vowels .o.
+                       [ i | í ] -> 0 || [ i | í ] _ "-" vowels .o.
+                       [ o | ó ] -> 0 || [ o | ó ] _ "-" vowels .o.
+                       [ a | á ] -> 0 || [ a | á ] ("-") _ ("-") [ a | á ];
+
+# 11.    Vyi-{a,o}    ->    Vy{a,o}
+# i-Loss 
+define iLoss [
+    [ i | í ] -> 0               || [ a | á | o | ó ] y _ [ a | á | o | ó ] .o.
+    i y [ i | í ] -> i (i) y ,
+    í y [ i | í ] -> í (í) y     || _ [ a | á | o | ó ] ] ;
+
+# 12.    si{a,o}    ->    s{a,o}
+# i-Absorption
+define iAbsorption [ i | í ] ("-") -> 0 || s _ [ a | á | o | ó ] ;
+
+# 13.    sihs    ->    ss
+# ih-Loss
+define ihLoss [ i | í ] "-" h -> 0 || s _ s ;
+
+# 14.    ihs    ->    ss
+# Presibilation
+# NOTE: I changed this rule from Frantz (1991) to allow for optional elision.
+define presibilation [ i | í ] "-" h -> [ s | 0 ] || _ s ;
+
+# 15.    CG    ->    C    , where C ne "'"
+# Semivowel Loss
+define semivowelLoss y -> 0 || [ obstruents | I ] ("-") _ .o.
+                     w -> 0 || obstruents ("-") _ ;
+
+# 16.    Ciyiy    ->    Ciiy
+# y-Reduction (optional)
+define yReduction y (->) 0 || [ obstruents | "'" ] [ i | í ] _ [ i | í ] ("-") y ;
+
+# 17.    sih    ->    ss
+# Postsibilation
+define postsibilation [ i | í ] ("-") h -> s || s _ ;
+
+# 18.    ti    ->    tsi
+# t-Affrication
+define tAffrication "-" -> s || t _ [ i | í ] ;
+
+# 19.    V'VC    ->    VV'C
+# Glottal Metathesis
+define glottalMetathesis w (->) 0 || "'" "-" _       .o. [
+                         "'" "-" a -> "-" a "'"      ,
+                         "'" "-" á -> "-" á "'"      ,
+                         "'" "-" a a -> "-" a a "'"  ,
+                         "'" "-" á á -> "-" á á "'"  ,
+                         "'" "-" i -> "-" i "'"      ,
+                         "'" "-" í -> "-" í "'"      ,
+                         "'" "-" i i -> "-" i i "'"  ,
+                         "'" "-" í í -> "-" í í "'"  ,
+                         "'" "-" o -> "-" o "'"      ,
+                         "'" "-" ó -> "-" ó "'"      ,
+                         "'" "-" o o -> "-" o o "'"  ,
+                         "'" "-" ó ó -> "-" ó ó "'"         || vowels _ simplexConsonants ] ;
+
+# 20.    VV1V1'C    ->    VV1V1C
+# Glottal Loss
+define glottalLoss [
+    a a "'" -> a a ,
+    á á "'" -> á á ,
+    i i "'" -> i i ,
+    í í "'" -> í í ,
+    o o "'" -> o o ,
+    ó ó "'" -> ó ó       || vowels ("-") _ buccalSimplexConsonants ] ;
+
+# 21.    V'(s)CC    ->    VV(s)CC    , where C ne 's'
+# Glottal Assimilation
+define glottalAssimilation [
+    a "'" -> a a ,
+    á "'" -> á á ,
+    i "'" -> i i ,
+    í "'" -> í í ,
+    o "'" -> o o ,
+    ó "'" -> ó ó     || _ (s) geminates ] ;
+
+# 22.    ''    ->    '
+# Glottal Reduction
+define glottalReduction "'" "'" -> "'" ;
+
+# 23.    V1'h    ->    V1'V1h
+# Vowel Epenthesis
+# note: In place of this rule, some speakers have the following rule:
+# ' -> 0 / _ h
+define vowelEpenthesis [
+    a "'" -> [ a "'" a | a ] ,
+    á "'" -> [ á "'" á | á ] ,
+    i "'" -> [ i "'" i | i ] ,
+    í "'" -> [ í "'" í | í ] ,
+    o "'" -> [ o "'" o | o ] ,
+    ó "'" -> [ ó "'" ó | ó ]    || _ h ] ;
+
+# 24.    sssC    ->    ssC
+# sss-Shortening
+define sssShortening s -> 0 || _ s s [ plosives | nasals | glides ] ;
+
+# 25.
+# Accent Spread
+define accentSpread [
+    a -> á      ,
+    a a -> á á  ,
+    i -> í      ,
+    i i -> í í  ,
+    o -> ó      ,
+    o o -> ó ó          || accentedVowels "-" _ ] ;
+
+# 26.    - -> 0
+# Break-Delete
+define breakDelete "-" -> 0 ;
+
+# 27.
+# Resolution of Non-permanent Consonants (cf. Frantz 1997: 9).
+# These consonants disappear before vowels, see p. 82 of grammar.
+define resolveNonPermanentConsonants [
+    [ N | M | S ] -> 0 || _ "-" vowels .o.
+    N -> n ,
+    M -> m ,
+    S -> s             || _ [ "-" | .#. ] ] ;
+
+# 28.
+# Inverse o-Loss ("t-ok-" -> "t-k-")
+define oLossINV o -> 0 || t "-" _ k "-" ;
+
+# 29.
+# Nasal loss (might be a more general rule...)
+define nasalLoss [ m | n ] -> 0 || plosives "-" _ ;
+
+# 30.   NVh -> N'Vh
+# Sonorant glottalization (before voiceless nuclei, cf. Weber 2013, p. 3 and Taylor 1969)
+# NOTE: it may be nessary to order this rule post-syllabification and use the syllable
+# boundary marker in the context ...
+define voicelessNucleus [ [ vowels [ h | .#. ] ] | s s ] ;
+define sonorantGlottalization [
+    m (->) "'"      || m _ voicelessNucleus .o.
+    n (->) "'"      || n _ voicelessNucleus .o.
+    [..] (->) "'"   || sonorants _ voicelessNucleus
+] ;
+
+# 31. Default syllable two prominence
+# Optionally accents every vowel in syllable two.
+# This is an attempt to model the very vague generalization that Blackfoot words
+# tend to have prominence in syllable two.  One problem with this approach is that
+# it does not "move" prominence from neighbouring syllables which is what, impressionistically,
+# appears to be happening.
+#
+# Another idea: add prominence to syllable three if syll 2 is devoiced
+#     users ot-ohkiimi-n                  -> otoohkííman
+# phonology ot-ohkiimi-n                  -> otohkiimin
+#
+define preContext .#. simplexConsonants* vowels+ simplexConsonants+;
+define postContext [ p | t | k | m | n | s | w | y | "'" | .#. | h ];
+define postContextX [ p | t | k | m | n | s | w | y | "'" | .#. ];
+define defaultSyllableTwoProminence a a (->) á á     || preContext _ postContext .o.
+                                    á a (->) á á     || preContext _ postContext .o.
+                                    a á (->) á á     || preContext _ postContext .o.
+                                    a (->) á         || preContext _ postContextX .o.
+                                    i i (->) í í     || preContext _ postContext .o.
+                                    i í (->) í í     || preContext _ postContext .o.
+                                    í i (->) í í     || preContext _ postContext .o.
+                                    i (->) í         || preContext _ postContextX .o.
+                                    o o (->) ó ó     || preContext _ postContext .o.
+                                    o ó (->) ó ó     || preContext _ postContext .o.
+                                    ó o (->) ó ó     || preContext _ postContext .o.
+                                    o (->) ó         || preContext _ postContextX .o.
+                                    a i i (->) á í í || preContext _ postContext .o.
+                                    a i (->) á í     || preContext _ postContext .o.
+                                    a o o (->) á ó ó || preContext _ postContext .o.
+                                    a o (->) á ó     || preContext _ postContext .o.
+                                    o i i (->) ó í í || preContext _ postContext .o.
+                                    o i (->) ó í     || preContext _ postContext;
+
+
+# Weber 2013 generalizations on lexically unaccented words.
+# a. monosyllabic words are accented on the one and only syllable
+# b. disyllabic words are accented on the second syllable.
+# c. for words with three or more syllables, the second syllable is accented
+#    if it is heavy and the third syllable otherwise
+# d. ...unless the third syllable contains a voiceless nuclei, in which case the second
+#    syllable is accented.
+
+# Accent monosyllabic words. Cf. Weber 2013.
+# NOTE: I have made this rule optional since I know that many users do not mark accent on 
+# monsyllabic words.
+# NOTE 2: This should also take care of disyllabics where one nucleus is [s]
+define accentMonosyllabics a a (->) á á     ,
+                           á a (->) á á     ,
+                           # /a á/ is probably bisyllabic a á (->) á á     ,
+                           a (->) á         ,
+                           i i (->) í í     ,
+                           i í (->) í í     ,
+                           í i (->) í í     ,
+                           i (->) í         ,
+                           o o (->) ó ó     ,
+                           # /o ó/ is probably bisyllabic o ó (->) ó ó     ,
+                           ó o (->) ó ó     ,
+                           o (->) ó         ,
+                           a i i (->) á í í ,
+                           a i (->) á í     ,
+                           a o o (->) á ó ó ,
+                           a o (->) á ó     ,
+                           o i i (->) ó í í ,
+                           o i (->) ó í     || .#. simplexConsonants* _ simplexConsonants* .#. ;
+
+# Begin syllabification
+################################################################################
+
+define onset            consonants - h ;
+define nucleus          [ vowels (vocoids) | s ] ;
+define coda             [[ fricatives | "'" ] [ plosives | nasals ] ] |
+                        consonants ;
+
+define syllable         onset nucleus (coda) ;
+define syllableNoOnset  nucleus (coda) ;
+
+# Alter syllabification so that /s/ doesn't constitute the nucleus if
+# it doesn't have to.
+define dispreferNucleicS [
+    "." -> 0               ||
+        # Word-initial /s/ is extra-syllabic, but we remove the boundary so
+        # that it does not appear to be a mono-segmental syllable.
+        .#. s _ ,
+        # It's preferable for /s/ to be a coda than the nucleus of an
+        # onset-less syllable, i.e., [.s.]:
+        vowels _ s "." .o.
+        # /ks/ and /ts/ should be affricates in coda position over CV
+        # syllables with [s] as nucleus.
+        # vowels ([ s | "'" ]) _ affricates [ "." | .#. ] .o.
+    # It's preferable for /s/ to be a coda than the onset of a
+    # nucleus-as-/s/ syllable.
+    "." s s "." -> s "." s || vowels _ ] ;
+
+# Alter syllabification so that certain vowel sequences are split across two
+# syllables.
+define segmentVowelSequences [..] -> "." || o _ [ a | á | ó ],
+                                            a _ [ á | ó ] ;
+
+# Syllables with one of y, w, m, n or ' as onset and s as nucleus are to be
+# avoided as violations of the sonority sequence (cf. above).
+define sonoritySequencing [
+    "." y   -> y "." ,
+    "." w   -> w "." ,
+    "." m   -> m ".",
+    "." n   -> n ".",
+    "." "'" -> "'" "."    || vowels _ s ] ;
+
+# Presibilants: Vs.t sequences should be syllabified as V.st,
+# i.e., assume that we have a presibilated /t/.
+define presibilants s "." -> "." s || vowels _ t ;
+#
+# The syllabify FST syllabifies Blackfoot words.  A brief explanation follows the
+# definition.
+#
+define syllabify [
+    syllable        @> ... "." || _ syllable .o.
+    syllableNoOnset @> ... "." || _ syllable .o.
+    dispreferNucleicS .o.
+    segmentVowelSequences .o.
+    sonoritySequencing .o.
+    presibilants
+] ;
+
+# The first regex in `syllabify` appends "." to all minimal ON(C) syllables
+# followed by an ON(C) syllable.  Thus /tapikáíimii/ would be transformed to
+# "ta.pi.káíimii" because "ta" is a minimal ON(C) syllable followed by another
+# ON(C) syllable "pi" which is itself a minimal ON(C) syllable followed by
+# another, i.e., "ká".  However, while both "ká" and "káí" are ON(C) syllables,
+# neither is followed by another valid such syllable since the next segment is a
+# vowel.  The second regex then transforms "ta.pi.káíimii" into [ta.pi.káíi.mii]
+# (the correct parse) because it appends "." to the minimal (O)N(C) syllable "i"
+# since it is followed by a minimal ON(C) syllable, viz. "mi".  Regexes #3-5 clean
+# up the resulting parse in the ways described in the comments above their
+# definitions.
+#
+# End syllabification
+################################################################################
+
+
+# Accent disyllabic words -- accent syllable two
+################################################################################
+#
+define accentDisyllabics [
+    a a   (->) á á     ,
+    á a   (->) á á     ,
+    a á   (->) á á     ,
+    a     (->) á       ,
+    i i   (->) í í     ,
+    i í   (->) í í     ,
+    í i   (->) í í     ,
+    i     (->) í       ,
+    o o   (->) ó ó     ,
+    o ó   (->) ó ó     ,
+    ó o   (->) ó ó     ,
+    o     (->) ó       ,
+    a i i (->) á í í   ,
+    a i   (->) á í     ,
+    a o o (->) á ó ó   ,
+    a o   (->) á ó     ,
+    o i i (->) ó í í   ,
+    o i   (->) ó í     || .#. unaccentedGraphs+ "." consonants* _ consonants* .#. ] ;
+
+
+# Accent trisyllabic+ words
+################################################################################
+
+# QUESTION: should accented long vowels before preaspirated stops be represented
+# with an acute accent only on the first vowel as per Weber (2013) ?
+
+define accentTrisyllabicsPlus [
+
+    # Polyvocalic nuclei are accented ...
+    a a   (->) á á     ,
+    i a a (->) i á á   ,
+    á a   (->) á á     ,
+    a á   (->) á á     ,
+    i i   (->) í í     ,
+    i í   (->) í í     ,
+    í i   (->) í í     ,
+    o o   (->) ó ó     ,
+    o ó   (->) ó ó     ,
+    ó o   (->) ó ó     ,
+    a i i (->) á í í   ,
+    a i   (->) á í     ,
+    a o o (->) á ó ó   ,
+    a o   (->) á ó     ,
+    o i i (->) ó í í   ,
+    o i   (->) ó í     ||
+
+    # ... in syllable two (if syllable three is not lexically accented)
+    .#. unaccentedGraphs+
+    "." consonants* _ consonants*
+    "." unaccentedGraphs+ [ "." | .#. ] ,
+
+    # ... or in syllable three if syllable two is voiceless or light.
+    .#. unaccentedGraphs+
+#    "." consonants* [ [ [ unaccentedVowels h ] | s ] consonants* ] | unaccentedVowels
+    "." consonants* [ unaccentedVowels | s ] consonants*
+    "." consonants* _ consonants* .o.
+
+    # Monovocalic nuclei are accented ...
+    i     (->)   í       ,
+    a     (->)   á       ,
+    o     (->)   ó       ||
+
+    # ... in syllable two, if it has a coda consonant, i.e., is heavy,
+    .#. unaccentedGraphs+
+    "." consonants* _ [ consonants - h ]+ "." ,
+
+    # ... in coda-less syllable two if syllable three has a voiceless nucleus,
+    .#. unaccentedGraphs+
+    "." consonants* _
+    "." consonants* [ [ unaccentedVowels h ] | s ] consonants* [ "." | .#. ] ,
+
+    # ... otherwise in syllable three (QUESTION: allow "short" diphthongs in unaccented syllable 2?)
+    .#. unaccentedGraphs+
+    "." consonants* [ unaccentedVowels (h) | s (s) ]
+    "." consonants* _ [ ? - h ]* [ "." | .#. ]
+] ;
+
+define syllableDelimiterDelete "." -> 0 ;
+
+# 32. Word-final vowel drop
+# Kainai speakers drop word-final short vowels and their glide onsets.  These transformations
+# are made optional because this phonology is still intended to cover all dialects.
+# WARNING: this is a massive overgeneralization since only certain word-final vowels are
+# dropped (cf. Denzer-King 2009), e.g., if the word-final vowel is a stem-final vowel, it 
+# will not be dropped.  Will a noun-final vowel be dropped, e.g., "onni"
+define wordFinalVowelDrop vowels    (->) 0    || buccalSimplexConsonants _ .#. .o.
+                          [ y | w ] (->) 0    || _ .#. ;
+
+# 33. Velar pre-aspiration
+# NOTE: this is probably lexically determined epenthesis, see Weber (2013).
+define velarPreaspiration "-" -> o h || [ m | n ] _ k ;
+
+# 34. Glottal stoppification
+define glottalStoppification h (->) "'" || "-" _ ;
+
+
+# Initial Change A -- morphologically-conditioned segmental change at the left
+# edge of verb stems that are not nominalizations or imperatives.
+define elementChar       [ ? - [ "-" | ⦀ ] ] ;
+define element           elementChar+ ;
+define morpheme          element ⦀  element ⦀  element ;
+define agreementPrefix   element ⦀  element ⦀  a g r a ;
+define agreementSuffix   element ⦀  element ⦀  a g r b ;
+define themeSuffix       element ⦀  element ⦀  t h m ;
+define adjunct           element ⦀  element ⦀  a d t ;
+define transitiveFinal   element ⦀  T [ A | I ] ⦀  f i n ;
+define intransitiveFinal element ⦀  [ A | I ] I ⦀  f i n ;
+define verbCatTrans      v t [ a | i ] ;
+define verbCatIntrans    v [ a | i ] i ;
+define verbCategories    verbCatTrans | verbCatIntrans ;
+define finiteGloss       [ [ ? - [ N | I | "-" | ⦀  ] ] elementChar* |
+                           N ([ ? - [ O | "-" | ⦀  ] ] elementChar*) |
+                           N O ([ ? - [ M | "-" ⦀  ] ] elementChar*) |
+                           N O M elementChar+ |
+                           I ([ ? - [ M | "-" | ⦀  ] ] elementChar*) |
+                           I M ([ ? - [ P | "-" ⦀  ] ] elementChar*) |
+                           I M P elementChar+ ] ;
+define finiteAgrSuf      element ⦀  finiteGloss ⦀  a g r b ;
+define preContext        .#. (agreementPrefix "-") ;
+define verbTransitive    [ element ⦀  element ⦀  verbCatTrans |
+                           element ⦀  element ⦀  v r t "-" transitiveFinal ] ;
+define verbTranThm       verbTransitive "-" themeSuffix ;
+define verbIntransitive  [ element ⦀  element ⦀  verbCatIntrans |
+                           element ⦀  element ⦀  v r t "-" intransitiveFinal ] ;
+define verbFinite        [ verbTranThm | verbIntransitive ] "-" finiteAgrSuf ;
+define verbFinStemR      (adjunct "-") verbFinite .#.;
+define initialChangeA [
+#    a -> i,
+#    á -> í,
+    i    (->) i i ,
+    o (o) -> i (i) ,
+    y     -> i (i) y  || .#.             _ verbFinStemR .o.
+    o (o) -> I ... ,
+    y     -> s        || verbalPrefixes  _ verbFinStemR .o.
+    [ ? - [ i | o | y | w ] ] -> i (i) ...     || preContext      _ verbFinStemR
+] ;
+
+# Initial Change B -- morphologically-conditioned segmental change at the left
+# edge of verb stems that *are* not nominalizations or imperatives.
+define verb              [ verbTransitive | verbIntransitive ] ;
+define verbInfinite      verb "-" element ⦀  [ N O M | I M P ] ⦀  element ;
+define verbInfStemR      (adjunct "-") verbInfinite [ .#. | "-" ] ;
+define initialChangeB [
+    i -> [ 0 | a ]         || .#. _ [ ? - h ] verbInfStemR .o.
+    i h -> i (i) h ,
+    s (->) a s ,
+    [ y | w ] -> 0 ,
+    o -> o o               || .#. _ verbInfStemR
+] ;
+
+# /wa/ Elision -- dialect-specific elision of /wa/ "3SG" agreement suffix
+define agrbNum [ a g r b | n u m ] ;
+define waElision [
+    "-" w a ⦀  element ⦀  agrbNum  -> 0    || [ ? - nasals ] ⦀  element ⦀  element _ .#. .o.
+    "-" w a ⦀  element ⦀  agrbNum (->) 0   || nasals ⦀  element ⦀  element _ .#. .o.
+    w                             (->) "'" || nasals ⦀  element ⦀  element "-" _ a ⦀  element ⦀  agrbNum .#.
+] ;
+
+
+# Two verbs have accent on a short syllable two where syllable three
+# accent is predicted: /ihpiyi/ and the /i'po-/ "speak" derivatives.
+define idiosyncraticSyllableTwoAccent [
+    i -> í || [ .#. | "-" ] i h p _ y i ⦀ d a n c e ⦀ v a i .o.
+    o -> ó || [ .#. | "-" ] i "'" p _ elementChar+ ⦀  s p e a k elementChar* ⦀  v [ t [ a | i ] | [ a | i ] i ] [ "-" | .#. ]
+] ;
+
+# At least five verbs have syllable one accent where syllable two or three
+# accent should be expected: waanii, waasai'ni, waakohs-, waawahkaa, waawayaki
+define idiosyncraticSyllableThreeAccent [
+    a a -> á á || [ .#. | "-" ] w _ n i i         ⦀  element ⦀  v a i "-" finiteAgrSuf ,
+                  [ .#. | "-" ] w _ s a i "'" n i ⦀  element ⦀  v a i "-" finiteAgrSuf ,
+                  [ .#. | "-" ] w _ w a h k a a   ⦀  element ⦀  v a i "-" finiteAgrSuf ,
+                  [ .#. | "-" ] w _ w a y á k i   ⦀  element ⦀  v t a "-" themeSuffix "-" finiteAgrSuf ,
+                  [ .#. | "-" ] w _ k o h s       ⦀  element ⦀  v r t "-" transitiveFinal "-" themeSuffix "-" finiteAgrSuf
+] ;
+
+# Impoverish Morphology -- remove the gloss and category information from the
+# morphological analysis.
+#define impoverishMorphology ⦀ [? - "-"]+ ⦀ [? - "-"]+ -> 0 || _ ["-" | .#.] ;
+define impoverishMorphology ⦀  element ⦀  element -> 0 || _ ["-" | .#.] ;
+
+# pre-imperative vowel lengthening (see footnote 1 of Frantz 1991: 151)
+define preImperativeVowelLengtheningBk [
+    o -> o o ,
+    i -> i i ,
+    a -> a a ,
+    í -> í í ,
+    á -> á á ,
+    ó -> ó ó         || consonants _ ⦀  element ⦀  element "-" s ⦀  I M P ⦀  element [ "-" | .#. ]
+] ;
+
+# pre-imperative vowel lengthening (see footnote 1 of Frantz 1991: 151)
+define preImperativeVowelLengthening [
+    o -> o o ,
+    i -> i i ,
+    a -> a a         || consonants _ ⦀  element ⦀  element "-" s ⦀  I M P ⦀  element [ "-" | .#. ]
+] ;
+
+
+#yáakihtaa⦀pack⦀vai-n⦀NOM⦀oth#                          M-Y Mp-N
+#yáakihtaa⦀pack⦀vai-t⦀IMP⦀agrb#                         M-Y Mp-N
+#waasai'ni⦀cry⦀vai-hsin⦀NOM⦀oth#                        M-Y Mp-N
+#waawayáki⦀beat⦀vta-yii⦀DIR⦀thm-wa⦀3SG⦀agrb#            M-Y Mp-N
+#waawayáki⦀beat⦀vta-s⦀IMP⦀agrb#                        M-Y Mp-N
+#waakohsi⦀boil⦀vta-m⦀DIR⦀thm-wa⦀3SG⦀agrb#               M-Y Mp-N
+#waanii⦀say⦀vai-wa⦀3SG⦀agrb#
+#waasai'ni⦀cry⦀vai-wa⦀3SG⦀agrb#
+#yáakihtaa⦀pack⦀vai-wa⦀3SG⦀agrb#
+#ssímihkaa⦀sniff⦀vai-wa⦀3SG⦀agrb#
+#ipásskaa⦀dance⦀vai-wa⦀3SG⦀agrb#                        M-Y Mp-N
+#á⦀IMPF⦀sp-ipsst⦀inside⦀dt-ooyi⦀eat⦀vai-wa⦀3SG⦀agrb#
+#á⦀IMPF⦀asp-oowatoo⦀eat⦀vti-m⦀DIR⦀thm-wa⦀3SG⦀agrb#
+#á⦀IMPF⦀sp-oowat⦀eat⦀vta-yii⦀DIR⦀thm-wa⦀3SG⦀agrb#
+#á⦀IMPF⦀asp-ooyi⦀eat⦀vai-wa⦀3SG⦀agrb#
+#ihkiitaa⦀bake⦀vai-n⦀NOM⦀oth-wa⦀PROX.SG⦀num#
+#ma'taaki⦀take⦀vta-t⦀IMP⦀agrb#
+#i'pistotsi⦀wet⦀vti-m⦀DIR⦀thm-wa⦀3SG⦀agrb#
+#sikstaki⦀bite⦀vai-hsin⦀NOM⦀oth#
+#
+#iihkíítaan
+##ihkiitaana#
+##ihkiitaan'a#
+##ihkíítaana#
+##ihkíítaan'a#
+#
+#
+# Peripheral vowel shortening
+# Long vowels at the beginning and end of words are optionally shortened
+define peripheralVowelShortening [
+    i i (->) i ,
+    í í (->) í ,
+    a a (->) a ,
+    á á (->) á ,
+    o o (->) o ,
+    ó ó (->) ó         || .#. _ , _ .#.
+] ;
+#
+# s.sC<rhyme> optionally becomes s.C<rhyme>
+define optionallyDeleteSClusters s (->) 0 || s "." _ simplexConsonants ;
+
+# Falling accent neutralization
+define neutralizeFalling á a (->) a a ;
+
+define phonology idiosyncraticSyllableTwoAccent .o.
+    idiosyncraticSyllableThreeAccent .o.
+    initialChangeA .o.
+    initialChangeB .o.
+    waElision .o.
+    preImperativeVowelLengthening .o.
+    impoverishMorphology .o.
+    neutralizeFalling .o.
+    oLossINV .o.
+    velarPreaspiration .o.
+    resolveNonPermanentConsonants .o.
+    glottalStoppification .o.
+    coalescence .o.
+    semivowelLoss .o. semivowelLoss .o.
+    gemination .o.
+    sInsertion .o.
+    sConnectionB .o.
+    yReduction .o.
+    breaking .o.
+    oReplacement .o.
+    ihLoss .o.
+    sConnectionA .o.
+    presibilation .o.
+    sssShortening .o.
+    semivowelDrop .o.
+    neutralization .o.
+    tAffrication .o.
+    postsibilation .o.
+    iAbsorption .o.
+    desyllabificationB .o.
+    desyllabificationA .o.
+    glottalMetathesis .o.
+    vowelShortening .o.
+    vowelEpenthesis .o.
+    glottalReduction .o.
+    glottalLoss .o.
+    glottalAssimilation .o.
+    accentSpread .o.
+    breakDelete .o.
+    iLoss .o.
+#    wordFinalVowelDrop .o.
+    peripheralVowelShortening .o.
+    sonorantGlottalization .o.
+    accentMonosyllabics .o.
+    syllabify .o.
+    optionallyDeleteSClusters .o.
+    accentDisyllabics .o.
+    accentTrisyllabicsPlus .o.
+    syllableDelimiterDelete ;
+
+
+# Initial change
+# ################################################################################
+# 
+# Options:
+#
+# 1. new IC lexical item 
+# 2. category-aware phonology
+#
+
+
+
+
+
+
+#Nominalizations and imperatives undergo "reverse" initial change ? ...
+################################################################################
+#
+# Lose an initial /i/
+#
+#    users ika'kiaaki-hsin               -> ka'kiááksin
+#phonology ika'kiaaki-hsin               -> ika'kiaaki'sin ika'kiaakssin iká'kiaaki'sin iká'kiaakssin
+#
+#    users ipii-t                        -> píít
+#phonology ipii-t                        -> ipiit ipíít
+#
+# /i/ -> /a/
+#
+#    users itsiniki-hsin                 -> atsiníksin
+#phonology itsiniki-hsin                 -> itsiniki'sin itsinikssin itsiníki'sin itsiníkssin
+
+# /o/ -> /oo/
+#
+#    users ohki-t                        -> oohkít
+#phonology ohki-t                        -> ohkit ohkít
+#
+#    users ohkooni-t                     -> oohkóónit
+#phonology ohkooni-t                     -> ohkoonit ohkóónit
+
+# /s/ -> /as/
+#
+#    users simimmohki-hsin               -> asimím'ohksin
+#phonology simimmohki-hsin               -> simim'ohki'sin simim'ohkssin simimm'ohki'sin simimm'ohkssin simimmohki'sin simimmohkssin simím'ohki'sin simím'ohkssin simímmohki'sin simímmohkssin
+
+# /aa/ -> /a/
+#
+#    users waakohsi-t                    -> akohsít
+#phonology waakohsi-t                    -> aakohsit aakohsít
+#
+#    users waakohsimaa-t                 -> akohsímaat
+#phonology waakohsimaa-t                 -> aakohsimaat aakohsímaat
+##
+#    users waanii-hsin                   -> aníssin
+#phonology waanii-hsin                   -> aanii'sin aanissin aaníí'sin aaníssin
+#
+#    users waanii-t                      -> aníít
+#phonology waanii-t                      -> aaniit aaníít
+
+# G -> 0
+#
+#    users yáakihtaa-t                  -> aakihtáát
+#phonology yáakihtaa-t                  -> áakihtaat
+#
+#    users yoohko-s                      -> oohkóós
+#phonology yoohko-s                      -> oohkos oohkoyis oohkoyís oohkós
+
+
+
+# /ss/ shortening ? ...
+################################################################################
+#
+#    users sikstaki-hsin                 -> sikstáksin
+#phonology sikstaki-hsin                 -> sikstákssin
+
+# VssC -> isC ...
+################################################################################
+#
+#    users sspommihtaa-wa                -> ispóm'ihta
+#phonology sspommihtaa-wa                -> sspom'ihtaa sspom'ihtaaw sspom'ihtaaw'a sspom'ihtaawa sspomm'ihtaa sspomm'ihtaaw sspomm'ihtaaw'a sspomm'ihtaawa sspommihtaa sspommihtaaw sspommihtaaw'a sspommihtaawa sspóm'ihtaa sspóm'ihtaaw sspóm'ihtaaw'a sspóm'ihtaawa sspómmihtaa sspómmihtaaw sspómmihtaaw'a sspómmihtaawa
+
+
+# Lexical accent exceptions, beginning with /a/, see p. 15
+################################################################################
+#
+#    users waasai'ni-wa                  -> áásai'ni
+#phonology waasai'ni-wa                  -> aasai'n'i aasai'ni aasai'niw aasai'niw'a aasai'niwa aasáí'n'i aasáí'ni aasáí'niw aasáí'niw'a aasáí'niwa
+
