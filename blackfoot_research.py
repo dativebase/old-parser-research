@@ -46,6 +46,9 @@ import locale
 import sys
 import optparse
 from researcher import ParserResearcher, Keeper, Log
+from pprint import PrettyPrinter
+
+pp = PrettyPrinter(indent=4)
 
 # Wrap sys.stdout into a StreamWriter to allow writing unicode.
 # This allows piping of unicode output.
@@ -1414,13 +1417,13 @@ class BlackfootParserResearcher(ParserResearcher):
                                 append(summary['lm_success_percent'])
         for summary in sorted(summaries.keys()):
             correctly_parsed_percent = u'    '.join(
-                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['correctly_parsed_percent']])
+                [u'%0.3f' % (p,) for p in summaries[summary]['correctly_parsed_percent']])
             morphophonology_success_percent = u'    '.join(
-                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['morphophonology_success_percent']])
+                [u'%0.3f' % (p,) for p in summaries[summary]['morphophonology_success_percent']])
             phonology_success_percent = u'    '.join(
-                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['phonology_success_percent']])
+                [u'%0.3f' % (p,) for p in summaries[summary]['phonology_success_percent']])
             lm_success_percent = u'    '.join(
-                [u'%0.2f%s' % (p, chr(37)) for p in summaries[summary]['lm_success_percent']])
+                [u'%0.3f' % (p,) for p in summaries[summary]['lm_success_percent']])
 
             print u'%s    %s    %s    %s    %s' % (
                 summary, correctly_parsed_percent, morphophonology_success_percent,
@@ -1531,7 +1534,7 @@ if __name__ == '__main__':
     parser_summaries = researcher.evaluate_parser_against_corpora(parser_1,
         corpora_subset, force_recreate=True, get_phonology_success=True,
         test_phonology=True)
-    print parser_summaries
+    pp.pprint(parser_summaries)
     #parser_summaries = [ps for ps in parser_summaries
     #    if ps['relation'] == 'all' and ps['type'] == 'well']
 
@@ -1546,7 +1549,7 @@ if __name__ == '__main__':
     # well      elicitor Dunham, (#298)        1357       8.47%    9.87%    85.82%    10.92%
     # well      all  (#277)                    6577       8.27%    9.59%    86.21%    16.80%
     # well      all  (#277)                    6577       1.64%    9.59%    17.12%    16.80%
-    researcher.pretty_print_parse_summaries(parser_summaries)
+    #researcher.pretty_print_parse_summaries(parser_summaries)
 
 
 

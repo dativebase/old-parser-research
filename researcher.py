@@ -689,7 +689,7 @@ class ParserResearcher(object):
                         f.write('phonology %-30s-> None\n\n' % morpheme_sequence)
         log.info('Saved phonological failures to %s.' % file_path)
 
-    def evaluate_parse(self, parses, corpus_dict, Parse, vocal=False):
+    def evaluate_parse(self, parses, corpus_dict, parser, vocal=False):
         """Evaluate a parse.
 
         :param dict parses: keys are transcriptions, values are 2-tuples: (parser.Parse(), [c1, c2, ...]).
@@ -718,12 +718,12 @@ class ParserResearcher(object):
             gold_parse = filter(None,
                 corpus_dict.get(transcription,
                                 corpus_dict.get(cleaned_transcription, no_gold)))
-            gold_parse_object = Parse(gold_parse)
+            gold_parse_object = parser.get_parse_object(gold_parse)
             total_actual_morphemes += len(gold_parse_object.morphemes)
             if parse_object.parse:
+                candidates_generated += 1
                 total_proposed_morphemes += len(parse_object.morphemes)
                 correct_proposed_morphemes += len([m for m in parse_object.morphemes if m in gold_parse_object.morphemes])
-                candidates_generated += 1
                 if parse_object.triplet == gold_parse:
                     correctly_parsed += 1
                     correct.append((transcription, gold_parse))
@@ -753,33 +753,22 @@ class ParserResearcher(object):
             print u'\n'.join('%-30s%-30s%-30s%-30s' % (tr, mb, mg, cat) for tr, (mb, mg, cat)
                     in sorted(no_gen, key=lambda x: x[0]))
 
-        try:
-            lm_success_percent = 100 * correctly_parsed / float(morphophonology_success)
-        except ZeroDivisionError:
-            lm_success_percent = 0.0
-
         # Precision and recall; precision = correct_proposed_morphemes / total_proposed_morphemes
         # recall = correct_proposed_morphemes / total_actual_morphemes
         precision = P = self.safe_div(correct_proposed_morphemes, total_proposed_morphemes)
         recall = R = self.safe_div(correct_proposed_morphemes, total_actual_morphemes)
-        f_measure = self.safe_div((2 * P * R), (P + R))
         return {
             'attempted_count': n,
-
-            'correctly_parsed': correctly_parsed,
-            'correctly_parsed_percent': 100 * correctly_parsed / float(n),
-
-            'candidates_generated': candidates_generated,
-            'candidates_generated_percent': 100 * candidates_generated / float(n),
-
-            'morphophonology_success': morphophonology_success,
-            'morphophonology_success_percent': 100 * morphophonology_success / float(n),
-
-            'lm_success_percent': lm_success_percent,
-
-            'precision': P,
-            'recall': R,
-            'f_measure': f_measure
+            'correctly_parsed_count': correctly_parsed,
+            'correctly_parsed': correctly_parsed / float(n),
+            'candidates_generated_count': candidates_generated,
+            'candidates_generated': candidates_generated / float(n),
+            'morphophonology_success_count': morphophonology_success,
+            'morphophonology_success': morphophonology_success / float(n),
+            'lm_success': self.safe_div(correctly_parsed, morphophonology_success),
+            'precision': precision,
+            'recall': recall,
+            'f_measure': self.safe_div((2 * P * R), (P + R))
         }
 
     def safe_div(self, numer, denom):
@@ -843,8 +832,8 @@ class ParserResearcher(object):
         morpheme_sequences = [x[1] for x in corpus_list if x[1]]
         phonologizations = self.phonologize_locally(parser, morpheme_sequences)
         phonology_success = len([t for t, b, g, c in corpus_list if t in phonologizations.get(b, [])])
-        return {'phonology_success': phonology_success,
-                'phonology_success_percent': 100 * phonology_success / float(len(corpus_list))}
+        return {'phonology_success_count': phonology_success,
+                'phonology_success': phonology_success / float(len(corpus_list))}
         #'morphophonology_success': morphophonology_success,
         #'morphophonology_success_percent': 100 * morphophonology_success / float(n),
 
@@ -908,9 +897,8 @@ class ParserResearcher(object):
                 parser, parses, corpus_dict, corpus['id'])
 
             # ``evaluation`` is a dict holding stats about the success of the parser on the corpus
-            parse_module = self.get_parse_module(parser)
-            Parse = parse_module.Parse
-            evaluation = self.evaluate_parse(parses, corpus_dict, Parse, vocal=vocal)
+            parser_object = self.get_parse_module(parser).parser
+            evaluation = self.evaluate_parse(parses, corpus_dict, parser_object, vocal=vocal)
 
             if test_phonology:
                 # Map morpheme sequences to phonologizations, i.e., transcriptions.
