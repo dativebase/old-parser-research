@@ -650,7 +650,8 @@ class BlackfootParserResearcher(ParserResearcher):
 
         name = u'Blackfoot phonology'
         description = u'A foma phonology script for Blackfoot adapted from Frantz (1997).'
-        script_path = 'resources/blackfoot_phonology.script'
+        #script_path = 'resources/blackfoot_phonology.script'
+        script_path = 'resources/blackfoot_phonology_frantz91.script'
         return self.create_phonology_x(force_recreate=force_recreate, name=name,
             script_path=script_path, description=description)
 
@@ -1150,20 +1151,25 @@ class BlackfootParserResearcher(ParserResearcher):
     def create_corpora(self, force_recreate=False, **kwargs):
         """Create a bunch of corpora and pickle them locally.
 
+        .. note::
+
+            I have commented out the commands to create the "words" and "analyzed words" copora,
+            focusing instead on just creating the "well analyzed words" ones.
+
         """
 
         log.info(u'Creating corpora.')
         corpora = {}
 
         # Create the three main corpora.
-        words_corpus = self.save_words_corpus(force_recreate=force_recreate)
-        analyzed_words_corpus = self.save_analyzed_words_corpus(
-            force_recreate=force_recreate)
+        #words_corpus = self.save_words_corpus(force_recreate=force_recreate)
+        #analyzed_words_corpus = self.save_analyzed_words_corpus(
+        #    force_recreate=force_recreate)
         well_analyzed_words_corpus = self.save_well_analyzed_words_corpus(
             force_recreate=force_recreate)
 
-        corpora[words_corpus['name']] = words_corpus
-        corpora[analyzed_words_corpus['name']] = analyzed_words_corpus
+        #corpora[words_corpus['name']] = words_corpus
+        #corpora[analyzed_words_corpus['name']] = analyzed_words_corpus
         corpora[well_analyzed_words_corpus['name']] = well_analyzed_words_corpus
 
         # Create a corpus of well-analyzed words from Weber 2013.
@@ -1197,13 +1203,13 @@ class BlackfootParserResearcher(ParserResearcher):
         }
         for relation, attribute_values in relations.items():
             for attribute, value in attribute_values:
-                corpus = self.save_words_corpus(
-                    force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
-                corpora[corpus['name']] = corpus
+                #corpus = self.save_words_corpus(
+                #    force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
+                #corpora[corpus['name']] = corpus
 
-                corpus = self.save_analyzed_words_corpus(
-                    force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
-                corpora[corpus['name']] = corpus
+                #corpus = self.save_analyzed_words_corpus(
+                #    force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
+                #corpora[corpus['name']] = corpus
 
                 corpus = self.save_well_analyzed_words_corpus(
                     force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
