@@ -26,6 +26,7 @@ and testing of morphological parsers and their attendant machinery.
 import codecs
 import cPickle
 import os
+import pprint
 import zipfile
 import errno
 import imp
@@ -298,6 +299,35 @@ class ParserResearcher(object):
                 for word in form['transcription'].split():
                     words.add((word, None, None, None))
         words = sorted(words)
+        return words
+
+    def get_form_word_tokens(self, form_list, filter_=False):
+        """Return a sorted list of all words in the form dicts of ``form_list``.
+
+        :param bool filter_: if set to ``True``, a word will not be added if it
+            is not well analyzed according to ``self.well_analyzed``.
+
+        The representation of each word is a quadruple of the form (tr, mb, mg, cat).
+
+        """
+        screen = Keeper([u'p', u't', u'k', u'm', u'n', u's', u'w', u'y', u'h', u"'", u'a', u'i', u'o', u'\u0301'])
+
+        words = []
+        for form in form_list:
+            if form['syntactic_category_string']:
+                for tr, mb, mg, sc in zip(
+                    form['transcription'].split(),
+                    form['morpheme_break'].split(),
+                    form['morpheme_gloss'].split(),
+                    form['syntactic_category_string'].split()):
+                    tr = tr.lower()
+                    if screen(tr) == tr:
+                        word = (tr, mb, mg, sc)
+                        if not filter_ or self.well_analyzed(word):
+                            words.append(word)
+            else:
+                for word in form['transcription'].split():
+                    words.append((word, None, None, None))
         return words
 
     def create_phonology(self, name, script, **kwargs):
@@ -574,18 +604,24 @@ class ParserResearcher(object):
         """Return the locally stored parser's parses of ``transcriptions``.
 
         """
+        print '\n\nIN PARSE LOCALLY IN RESEARCHER\n\n'
+
+        # WARNING: setting max_candidates to None will cause the system to cache and return
+        # all candidates proposed by the morphophonology; this will probably slow things down...
+        max_candidates = 10 # 10 is a good number to use...
+
         parse_module = self.get_parse_module(parser)
         if batch_size:
             parses = {}
             n = len(transcriptions)
             for chunk in (transcriptions[pos: pos + batch_size] for pos in
                           xrange(0, len(transcriptions), batch_size)):
-                chunk_parsed = parse_module.parser.parse(chunk, parse_objects=True)
+                chunk_parsed = parse_module.parser.parse(chunk, parse_objects=True, max_candidates=max_candidates)
                 parses.update(chunk_parsed)
                 print '%d of %d parsed' % (len(parses), n)
             return parses
         else:
-            return parse_module.parser.parse(transcriptions, parse_objects=True)
+            return parse_module.parser.parse(transcriptions, parse_objects=True, max_candidates=max_candidates)
 
     def get_parse_module(self, parser):
         """Return the imported-as-module executable ``lib/parse.py``.
@@ -636,6 +672,8 @@ class ParserResearcher(object):
         key = 'parsers'
         parser_dir = os.path.join(self.localstore, key, 'parser_%s' % parser['id'])
         file_path = os.path.join(parser_dir, 'unparsed_corpus_%s.txt' % corpus_id)
+        parsed_path = os.path.join(parser_dir, 'parsed_corpus_%s.txt' % corpus_id)
+        parsed_file = codecs.open(parsed_path, 'w', 'utf8')
         with codecs.open(file_path, 'w', 'utf8') as f:
             for transcription, (parse, candidates) in sorted(parses.items()):
                 if not parse.parse:
@@ -652,7 +690,11 @@ class ParserResearcher(object):
                         f.write(u'%-30s%s\n' % (transcription, u' '.join(gold_parse)))
                     except:
                         f.write(u'%s\n' % transcription)
+                else:
+                    parsed_file.write(u'%s %s\n\n' % (transcription, parse.parse))
+
         log.info('Saved unparsed words to %s.' % file_path)
+        log.info('Saved parsed words to %s.\n\n' % parsed_path)
         return morpheme_sequences, category_sequences
 
     def save_phonological_failures(self, parser, phonologizations, morpheme_sequences, corpus_id):
@@ -702,6 +744,7 @@ class ParserResearcher(object):
         n = len(parses)
         correctly_parsed = 0            # correct parse was generated
         candidates_generated = 0        # at least one candidate parse was generated
+        tot_candidates_generated = 0    # total number of candidates generated
         morphophonology_success = 0     # the morphophonology generated the correct parse
         correct = []
         correct_mp = []
@@ -720,10 +763,14 @@ class ParserResearcher(object):
                                 corpus_dict.get(cleaned_transcription, no_gold)))
             gold_parse_object = parser.get_parse_object(gold_parse)
             total_actual_morphemes += len(gold_parse_object.morphemes)
+            tot_candidates_generated += len(candidates)
             if parse_object.parse:
                 candidates_generated += 1
                 total_proposed_morphemes += len(parse_object.morphemes)
-                correct_proposed_morphemes += len([m for m in parse_object.morphemes if m in gold_parse_object.morphemes])
+                # I am counting the cardinality of the set of proposed
+                # morphemes so that things aren't counted twice. Bit of
+                # corner-cutting, if you think about it...
+                correct_proposed_morphemes += len(set([m for m in parse_object.morphemes if m in gold_parse_object.morphemes]))
                 if parse_object.triplet == gold_parse:
                     correctly_parsed += 1
                     correct.append((transcription, gold_parse))
@@ -731,8 +778,20 @@ class ParserResearcher(object):
                     morphophonology_success += 1
                     if parse_object.triplet != gold_parse:
                         correct_mp.append((transcription, gold_parse))
+                        #print u'\n\n\n'
+                        #print u'%s should have been parsed as %s' % (transcription, gold_parse)
+                        #print u'However, the parser returned:\n\t %s' % (parse_object.triplet),
+                        #print u'\n\t'.join([unicode(c.triplet) for c in candidates])
+                        #print u'\n\n\n'
                 else:
                     incorrect_mp.append((transcription, gold_parse, candidates))
+                    #print u'\n\n\n'
+                    #print u'A parse was produced but it was incorrect'
+                    #print u'Furthermore, the morphophonology did not even produce the correct analysis in the candidates.'
+                    #print u'%s should have been parsed as %s' % (transcription, gold_parse)
+                    #print u'However, the parser returned:\n\t',
+                    #print u'\n\t'.join([unicode(c.triplet) for c in candidates])
+                    #print u'\n\n\n'
             else:
                 no_gen.append((transcription, gold_parse))
         if vocal:
@@ -768,7 +827,8 @@ class ParserResearcher(object):
             'lm_success': self.safe_div(correctly_parsed, morphophonology_success),
             'precision': precision,
             'recall': recall,
-            'f_measure': self.safe_div((2 * P * R), (P + R))
+            'f_measure': self.safe_div((2 * P * R), (P + R)),
+            'tot_candidates_generated': tot_candidates_generated 
         }
 
     def safe_div(self, numer, denom):
@@ -841,14 +901,20 @@ class ParserResearcher(object):
         """Parse all of the transcriptions in the locally saved corpus using the
         locally saved parser.
 
+        NOTE: I am running the preflight function on all transcriptions in the corpus list here.
+
         """
         print 'in parse_corpus in researcher.py'
+
         corpus_list = cPickle.load(open(corpus['local_copy_path'], 'rb'))
-        transcriptions = list(set([t for t, m, g, c in corpus_list]))
+        corpus_list = [(preflight(t), m, g, c) for t, m, g, c in corpus_list]
+        transcriptions = list(set([t for t, m, g, c in corpus_list][:10]))
         log.info('About to parse all %s unique transcriptions in corpus "%s".' % (
             len(transcriptions), corpus['name']))
         start_time = time.time()
         parses = self.parse_locally(parser, transcriptions, batch_size)
+        print 'This is what parse_locally returns:\n\n'
+        pprint.pprint(parses)
         end_time = time.time()
         log.info('Time elapsed: %s' % self.old.human_readable_seconds(end_time - start_time))
         return parses, corpus_list
@@ -870,6 +936,10 @@ class ParserResearcher(object):
         force_recreate = kwargs.get('force_recreate', False)
         vocal = kwargs.get('vocal', False)
 
+        # The preflight kwarg is a function that can be run on each transcription prior
+        # to a parse request. In Dunham (2014), this is used to flatten prominence and length distinctions
+        preflight = kwargs.get('preflight', lambda x: x)
+
         # E.g., self.record['parse_summaries'][48][273] is a summary of the success of parser 48 on corpus 273
         key = 'parse_summaries'
         record = self.record.get(key, {}).get(parser['id'], {})
@@ -884,7 +954,8 @@ class ParserResearcher(object):
                 continue
 
             # Parse the corpus of words
-            parses, corpus_list = self.parse_corpus(parser, corpus, batch_size)
+            print 'In evaluate_parser_against_corpora'
+            parses, corpus_list = self.parse_corpus(parser, corpus, batch_size, preflight)
             corpus_dict = dict((self.clean_transcription(t), [b, g, c]) for t, b, g, c in corpus_list)
 
             # Here we do stuff to try to figure out what's going wrong with the parser.
@@ -956,6 +1027,7 @@ class ParserResearcher(object):
         response = self.old.get('phonologies/%s/runtests' % phonology['id'])
         successful = 0
         unsuccessful = []
+        f = codecs.open('frantz91_phonology_no_accents_test_results.txt', 'a', 'utf8')
         for morpheme_sequence in sorted(response.keys()):
             results = response[morpheme_sequence]
             expected = results['expected']
@@ -967,9 +1039,12 @@ class ParserResearcher(object):
             else:
                 unsuccessful.append(morpheme_sequence)
                 if not condition or condition(morpheme_sequence):
-                    log.info('%s\n\texpected: %s\n\tactual:   %s' % (morpheme_sequence,
+                    log.info('%s\n\tgold: %s\n\tphonology:   %s' % (morpheme_sequence,
+                        u', '.join(expected), u', '.join(actual)))
+                    f.write('\n\n%s\n\tgold: %s\n\tphonology:   %s' % (morpheme_sequence,
                         u', '.join(expected), u', '.join(actual)))
         log.info('%s / %s (%0.2f) success rate' % (successful, test_count, 100.0 * successful / test_count))
+        f.write('\n\n%s / %s (%0.2f) success rate\n\n' % (successful, test_count, 100.0 * successful / test_count))
         return unsuccessful, test_count
 
     def get_categories(self):

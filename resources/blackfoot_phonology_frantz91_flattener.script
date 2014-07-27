@@ -1,7 +1,11 @@
 ################################################################################
-# A Phonology of Blackfoot, as an FST, based on Frantz (1991)
+# A Phonology of Blackfoot, as an FST, based on Frantz (1991), which flattens ...
 ################################################################################
 #
+# ... prominence and length distinctions. I.e., from /iit-yáapi-yi-aawa/ it
+# will produce <itapiyawa>. This is a minimal modification of a file called
+# blackfoot_phonology_frantz91.script.
+
 # This file is a foma regular expression rewrite rule script that can be used
 # to generate a FST that implements the phonology of Blackfoot, as described in
 # Frantz (1991), i.e., the Blackfoot Grammar. In short, it implements the 
@@ -875,6 +879,28 @@ define breakDelete "-" -> 0 ;
 
 
 
+# Flattening Rules
+################################################################################
+
+# Remove all accent marks on vowels
+define noAccentedVowels á -> a , í -> i , ó -> o ;
+
+# Shorten all long vowels and consonants
+# Note the use of the Left-to-right longest-match replacement operator
+# https://code.google.com/p/foma/wiki/RegularExpressionReference#Replacement_operators
+define shorten [
+    p+ @-> p ,
+    t+ @-> t ,
+    k+ @-> k ,
+    m+ @-> m ,
+    n+ @-> n ,
+    s+ @-> s ,
+    a+ @-> a ,
+    i+ @-> i ,
+    o+ @-> o ] ;
+
+
+
 # Phonology FST: ordered rewrite rules = ordered composition of FSTs
 ################################################################################
 #
@@ -930,6 +956,11 @@ define phonology [
     glottalAssimilation .o. 
     accentSpread .o. 
     breakDelete .o. 
-    iLoss 
+    iLoss .o.
+
+    # Here is what is new in this phonology
+    noAccentedVowels .o.
+    shorten 
 ] ;
+
 

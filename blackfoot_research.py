@@ -18,6 +18,9 @@
 """Blackfoot Research --- a script that tries to create effective morphological
 parsers for the Blackfoot language.
 
+WARNING: THERE IS A LOT OF JUNKY ONCE-OFF CODE IN HERE. PERHAPS USEFUL FOR SOME
+IDEAS, BUT DEFINITELY NOT QUALITY STUFF!
+
 The point of this script, beyond any empirical/theoretical linguistic findings
 that it might facilitate, is to demonstrate practical and theory-relevant
 interaction with a live OLD language-documenting OLD web service using only the
@@ -41,12 +44,15 @@ develop their parsers in that way.
 import codecs
 import cPickle
 import os
+import re
 import time
 import locale
 import sys
 import optparse
 from researcher import ParserResearcher, Keeper, Log
+import pprint
 from pprint import PrettyPrinter
+import random
 
 pp = PrettyPrinter(indent=4)
 
@@ -177,10 +183,12 @@ class BlackfootParserResearcher(ParserResearcher):
         if record.get('created') and not force_recreate:
             log.info(u'Form search "%s" has already been created.' % name)
             return record
+        print '\n\n\nIN create_analyzed_words_search\n\n\n'
         conjuncts = [['or', [['Form', 'syntactic_category', 'name', '=', u'sent'],
                              ['Form', 'morpheme_break', 'like', '% %'],
                              ['Form', 'morpheme_break', 'like', '%-%']]],
                      ['Form', 'syntactic_category_string', '!=', None],
+                     ['not', ['Form', 'syntactic_category_string', 'regex', '( |^|-)sent( |$|-)']],
                      ['Form', 'grammaticality', '=', '']]
         if relation:
             conjuncts.append(['Form', relation, attribute, '=', value])
@@ -458,6 +466,8 @@ class BlackfootParserResearcher(ParserResearcher):
             log.info(u'Corpus "%s" has been saved locally.' % name)
             return record
 
+
+
     # Morphology creation methods
     ################################################################################
 
@@ -475,6 +485,51 @@ class BlackfootParserResearcher(ParserResearcher):
             name = 'Morphology based on well analyzed words entered by Joel Dunham',
             rc_func = 'create_dunham_enterer_well_analyzed_words_corpus',
             rich_upper = True)
+
+    def create_morphology_frantz95_waw(self, force_recreate=False):
+        """Create a morphology with Frantz & Russell (1995) as lexicon and morphotactic
+        rules drawn from the well analyzed words in the data set.
+        """
+        print 'In create_morphology_frantz95_waw'
+        name = 'Morphology with morphotactics drawn from well analyzed words in the data set.'
+        lexicon_corpus = self.create_lexicon_corpus(force_recreate)
+        rules_corpus_id = 369 # The "Corpus where each form is a representation of a unique well-analyzed word" as already been created; it's id is 369.
+        #script_type = 'lexc'
+        script_type = 'lexc'
+        rich_upper = False
+        rich_lower = False
+        include_unknowns = False
+        extract_morphemes_from_rules_corpus = False
+        key = 'morphologies'
+
+        morphology = self.create_morphology(
+            name,
+            lexicon_corpus_id=lexicon_corpus['id'],
+            rules_corpus_id=rules_corpus_id,
+            script_type=script_type,
+            rich_upper=rich_upper,
+            rich_lower=rich_lower,
+            include_unknowns=include_unknowns,
+            extract_morphemes_from_rules_corpus=extract_morphemes_from_rules_corpus
+        )
+        assert 'id' in morphology
+        log.info(u'Morphology "%s" created.' % name)
+        record = self.record.get(key, {}).get(name, {})
+        if record.get('generate_succeeded') and not force_recreate:
+            log.warn(u'Morphology "%s" already generated.' % name)
+        else:
+            old_generate_attempt = record.get('generate_attempt')
+            morphology = self.generate_morphology(morphology['id'])
+            assert old_generate_attempt != morphology['generate_attempt']
+            morphology['generate_succeeded'] = True
+            self.record[name] = morphology
+            self.dump_record()
+        record = self.record.get(key, {}).get(name, {})
+        record['created'] = True
+        record.update(morphology)
+        self.record[key][name] = record
+        self.dump_record()
+        return record
 
     def create_morphology_louie_elicitor(self, force_recreate=False):
         """All analyzed words elicited by Louie."""
@@ -518,6 +573,8 @@ class BlackfootParserResearcher(ParserResearcher):
 
         kwargs must have a 'name' key; optional keys with defaults are 'lc_func',
         'rc_func', 'script_type' and 'rich_upper'.
+
+        HERE!!!
 
         """
 
@@ -655,6 +712,48 @@ class BlackfootParserResearcher(ParserResearcher):
         return self.create_phonology_x(force_recreate=force_recreate, name=name,
             script_path=script_path, description=description)
 
+    def create_phonology_frantz91(self, force_recreate=False):
+        """Create a Blackfoot foma phonology based on Frantz's (1991) phonology.
+
+        """
+
+        name = u'Blackfoot phonology from Frantz (1991)'
+        description = u'A foma phonology script for Blackfoot adapted from Frantz (1991) with phonological and lexico-phonological rules.'
+        script_path = 'resources/blackfoot_phonology_frantz91.script'
+        #script_path = 'resources/blackfoot_phonology_frantz91_gold_tests.script' # This one is used to hackily try all of the gold standard forms as tests ...
+        return self.create_phonology_x(force_recreate=force_recreate, name=name,
+            script_path=script_path, description=description)
+
+    def create_phonology_frantz91_flattener(self, force_recreate=False):
+        """Create a Blackfoot foma phonology based on Frantz's (1991) phonology 
+        but which flattens prominence and length distinctions.
+
+        """
+
+        name = u'Blackfoot phonology from Frantz (1991) with prominence and length distinctions flattened'
+        description = u'A foma phonology script for Blackfoot adapted from Frantz (1991) with phonological and lexico-phonological rules and with prominence and length distinctions flattened.'
+        script_path = 'resources/blackfoot_phonology_frantz91_flattener.script'
+        #script_path = 'resources/blackfoot_phonology_frantz91_flattener_gold_tests.script' # This one is used to hackily try all of the gold standard forms as tests ...
+        return self.create_phonology_x(force_recreate=force_recreate, name=name,
+            script_path=script_path, description=description)
+
+    def get_stems_by_initial_segment(self):
+        """Throw-away function used to query all verb and noun stems and pickle them
+        as a dict that can later be used in the REPL to count them according to their
+        initial segment. Used in the dissertation to show that the vast majority of
+        verb stems begin with a vowel, a semivowel or s.
+
+        """
+
+        stems = ['nan', 'nin', 'nar', 'nir', 'vta', 'vai', 'vti', 'vii']
+        forms = self.old.search('forms',
+            {'query': {'filter': ['Form', 'syntactic_category', 'name', 'in', stems]}})
+        stems = {}
+        for form in forms:
+            stems.setdefault(form['syntactic_category']['name'], []).append(form['morpheme_break'])
+        print len(stems)
+        cPickle.dump(stems, open('stems.pickle', 'wb'))
+
     def create_phonology_2(self, force_recreate=False):
         """Create a Blackfoot foma phonology based on Frantz's (1997) phonology but
         with additional rules that attempt to capture the surface transcriptions of the
@@ -757,6 +856,85 @@ class BlackfootParserResearcher(ParserResearcher):
         self.record[key][name] = record
         self.dump_record()
         return language_model
+
+
+    def create_gold_language_model(self):
+        """Create five morpheme language models based on the five randomly shuffled 90%ers
+        of the Gold Standard corpus:
+
+        corpus #371 'Gold 1 training'.
+        corpus #373 'Gold 2 training'.
+        corpus #375 'Gold 3 training'.
+        corpus #377 'Gold 4 training'.
+        corpus #379 'Gold 5 training'.
+
+        After this ran, I had:
+
+        | 40 | Language model based on corpus "Gold 1 training". |
+        | 41 | Language model based on corpus "Gold 2 training". |
+        | 42 | Language model based on corpus "Gold 3 training". |
+        | 43 | Language model based on corpus "Gold 4 training". |
+        | 44 | Language model based on corpus "Gold 5 training".
+
+        """
+
+        for corpus_id, corpus_name in (
+            (371, 'Gold 1 training'),
+            (373, 'Gold 2 training'),
+            (375, 'Gold 3 training'),
+            (377, 'Gold 4 training'),
+            (379, 'Gold 5 training')):
+            categorial = False
+            name = u'Language model based on corpus #371 "%s".' % corpus_name
+            language_model = self.create_language_model(name, corpus_id, toolkit='mitlm', categorial=categorial)
+            log.info(u'%s created.' % name)
+            language_model = self.generate_language_model(language_model['id'])
+            try:
+                assert language_model['generate_succeeded'] == True
+            except AssertionError:
+                log.info(language_model['generate_message'])
+            log.info(u'%s generated.' % name)
+
+
+
+    def create_gold_language_model_categorial(self):
+        """Create five morpheme language models based on the five randomly shuffled 90%ers
+        of the Gold Standard corpus which are categorial:
+
+        corpus #371 'Gold 1 training'.
+        corpus #373 'Gold 2 training'.
+        corpus #375 'Gold 3 training'.
+        corpus #377 'Gold 4 training'.
+        corpus #379 'Gold 5 training'.
+
+        After this ran, I had:
+
+        | 54 | Categorial Language model based on corpus #371 "Gold 1 training". |
+        | 55 | Categorial Language model based on corpus #373 "Gold 2 training". |
+        | 56 | Categorial Language model based on corpus #375 "Gold 3 training". |
+        | 57 | Categorial Language model based on corpus #377 "Gold 4 training". |
+        | 58 | Categorial Language model based on corpus #379 "Gold 5 training".
+
+        """
+
+        for corpus_id, corpus_name in (
+            (371, 'Gold 1 training'),
+            (373, 'Gold 2 training'),
+            (375, 'Gold 3 training'),
+            (377, 'Gold 4 training'),
+            (379, 'Gold 5 training')):
+            categorial = True
+            name = u'Categorial Language model based on corpus #%s "%s".' % (corpus_id, corpus_name)
+            language_model = self.create_language_model(name, corpus_id, toolkit='mitlm', categorial=categorial)
+            log.info(u'%s created.' % name)
+            language_model = self.generate_language_model(language_model['id'])
+            try:
+                assert language_model['generate_succeeded'] == True
+            except AssertionError:
+                log.info(language_model['generate_message'])
+            log.info(u'%s generated.' % name)
+
+
 
     def create_language_model_1(self, force_recreate=False):
         """Create a morpheme language model based on a corpus of forms containing analyzed words.
@@ -868,6 +1046,158 @@ class BlackfootParserResearcher(ParserResearcher):
         self.record[key][name] = record
         self.dump_record()
         return parser
+
+    def create_thesis_parser_1(self, lm_id, force_recreate=False):
+        """Create Parser 1 as discussed in my dissertation with LM 40.
+        morphological parser for Blackfoot, compile it and save it locally.
+
+        # Phonology: #50 "Blackfoot phonology from Frantz (1991)"
+        # Morphology: #61 "Morphology with morphotactics drawn from well analyzed words in the data set"
+        # Language Models: 
+        #     #40 "Language model based on corpus 'Gold 1 training'."
+        #     #41 "Language model based on corpus 'Gold 2 training'."
+        #     #42 "Language model based on corpus 'Gold 3 training'."
+        #     #43 "Language model based on corpus 'Gold 4 training'."
+        #     #44 "Language model based on corpus 'Gold 5 training'."
+
+        """
+
+        phonology_id = 50
+        morphology_id = 61
+        name = u'Morphological parser for Blackfoot as described in Dunham (2014) with LM #%d' % lm_id
+
+        #BOSCO
+        # Here begins the code of create_parser_x
+
+        key = 'parsers'
+        log.info(u'Creating a parser named "%s".' % name)
+
+        record = self.record.get(key, {}).get(name, {})
+        if record.get('created') and not force_recreate:
+            log.info(u'Parser "%s" has already been created, compiled and saved locally.' % name)
+            return record
+
+        # Create the parser
+        parser = self.create_parser(name, phonology_id, morphology_id, lm_id)
+        assert 'id' in parser
+        log.info(u'%s created.' % name)
+        local_copy_path = os.path.join(self.localstore, key, 'parser_%s' % parser['id'])
+        self.record[key][name] = parser
+        self.dump_record()
+
+        # Compile the parser, if not already compiled.
+        record = self.record.get(key, {}).get(name, {})
+        if (parser['compile_attempt'] == record.get('compile_attempt', 'None') and
+            parser['compile_succeeded'] == True and not force_recreate):
+            log.info(u'Parser "%s" has already been compiled.' % name)
+        else:
+            parser = self.compile_parser(parser['id'])
+            pprint.pprint(parser)
+            assert parser['compile_succeeded'] == True
+            record.update(parser)
+            self.record[key][name] = record
+            self.dump_record()
+            log.info(u'%s compiled.' % name)
+
+        # Save a local copy of the parser.
+        record = self.record.get(key, {}).get(name, {})
+        if (parser['compile_attempt'] == record.get('compile_attempt', 'None') and
+            record.get('saved_locally') and not force_recreate):
+            log.info(u'Parser "%s" has already been saved locally.' % name)
+        else:
+            local_copy_path = researcher.save_parser_locally(parser['id'], local_copy_path)
+            assert os.path.exists(local_copy_path)
+            assert os.path.isfile(os.path.join(local_copy_path, 'parse.py'))
+            parser.update({
+                'saved_locally': True,
+                'local_copy_path': local_copy_path
+            })
+            record.update(parser)
+            self.record[key][name] = record
+            self.dump_record()
+            log.info(u'Parser "%s" has been saved locally.' % name)
+
+        record = self.record.get(key, {}).get(name, {})
+        record['created'] = True
+        self.record[key][name] = record
+        self.dump_record()
+        return parser
+
+
+    def create_thesis_parser_2(self, lm_id, force_recreate=False):
+        """Create Parser 1 as discussed in my dissertation with LM 40.
+        morphological parser for Blackfoot, compile it and save it locally.
+
+        # Phonology: #51 "Blackfoot phonology from Frantz (1991) with prominence and length distinctions flattened"
+        # Morphology: #61 "Morphology with morphotactics drawn from well analyzed words in the data set"
+        # Language Models: 
+        #     #40 "Language model based on corpus 'Gold 1 training'."
+        #     #41 "Language model based on corpus 'Gold 2 training'."
+        #     #42 "Language model based on corpus 'Gold 3 training'."
+        #     #43 "Language model based on corpus 'Gold 4 training'."
+        #     #44 "Language model based on corpus 'Gold 5 training'."
+
+        """
+
+        phonology_id = 51
+        morphology_id = 61
+        name = u'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #%d' % lm_id
+
+        key = 'parsers'
+        log.info(u'Creating a parser named "%s".' % name)
+
+        record = self.record.get(key, {}).get(name, {})
+        if record.get('created') and not force_recreate:
+            log.info(u'Parser "%s" has already been created, compiled and saved locally.' % name)
+            return record
+
+        # Create the parser
+        parser = self.create_parser(name, phonology_id, morphology_id, lm_id)
+        assert 'id' in parser
+        log.info(u'%s created.' % name)
+        local_copy_path = os.path.join(self.localstore, key, 'parser_%s' % parser['id'])
+        self.record[key][name] = parser
+        self.dump_record()
+
+        # Compile the parser, if not already compiled.
+        record = self.record.get(key, {}).get(name, {})
+        if (parser['compile_attempt'] == record.get('compile_attempt', 'None') and
+            parser['compile_succeeded'] == True and not force_recreate):
+            log.info(u'Parser "%s" has already been compiled.' % name)
+        else:
+            parser = self.compile_parser(parser['id'])
+            pprint.pprint(parser)
+            assert parser['compile_succeeded'] == True
+            record.update(parser)
+            self.record[key][name] = record
+            self.dump_record()
+            log.info(u'%s compiled.' % name)
+
+        # Save a local copy of the parser.
+        record = self.record.get(key, {}).get(name, {})
+        if (parser['compile_attempt'] == record.get('compile_attempt', 'None') and
+            record.get('saved_locally') and not force_recreate):
+            log.info(u'Parser "%s" has already been saved locally.' % name)
+        else:
+            local_copy_path = researcher.save_parser_locally(parser['id'], local_copy_path)
+            assert os.path.exists(local_copy_path)
+            assert os.path.isfile(os.path.join(local_copy_path, 'parse.py'))
+            parser.update({
+                'saved_locally': True,
+                'local_copy_path': local_copy_path
+            })
+            record.update(parser)
+            self.record[key][name] = record
+            self.dump_record()
+            log.info(u'Parser "%s" has been saved locally.' % name)
+
+        record = self.record.get(key, {}).get(name, {})
+        record['created'] = True
+        self.record[key][name] = record
+        self.dump_record()
+        return parser
+
+
 
     def create_parser_1(self, force_recreate=False):
         """Create a morphological parser for Blackfoot, compile it and save it locally.
@@ -1082,17 +1412,26 @@ class BlackfootParserResearcher(ParserResearcher):
 
         # Test the parser via request
         parses = self.parse(parser, transcriptions.keys())
-        print parses
-        print transcriptions
-        assert parses == transcriptions
-        log.info('Parser "%s" parses correctly via request.' % parser['name'])
+        print 'Parser produces:'
+        pprint.pprint(parses)
+        print 'Parser should produce:'
+        pprint.pprint(transcriptions)
+        try:
+            assert parses == transcriptions
+            log.info('Parser "%s" parses correctly via request.' % parser['name'])
+        except AssertionError:
+            print 'Parser parsers, but not as expected.'
+            log.info('Parser "%s" parses, but not as expected.' % parser['name'])
 
         # Test the locally saved parser
         # Note that ``parse_locally`` returns ``Parse`` instances, not strings.
         parses = self.parse_locally(parser, transcriptions.keys())
-        assert (dict((transcription, parse.parse) for transcription, (parse, candidates) in parses.iteritems())
-                == transcriptions)
-        log.info('Parser "%s" parses correctly locally.' % parser['name'])
+        try:
+            assert (dict((transcription, parse.parse) for transcription, (parse, candidates) in parses.iteritems())
+                    == transcriptions)
+            log.info('Parser "%s" parses correctly locally.' % parser['name'])
+        except AssertionError:
+            log.info('Parser "%s" parses locally, not correctly.' % parser['name'])
 
     def create_dunham_enterer_well_analyzed_words_corpus(self, force_recreate=False):
         """Create a corpus of forms containing well analyzed words entered by Dunham.
@@ -1148,6 +1487,379 @@ class BlackfootParserResearcher(ParserResearcher):
         return self.create_corpus(name, content=content)
 
 
+    def get_well_analyzed_words(self, force_recreate=False, **kwargs):
+        """Find all of the well analyzed words in the database and do stuff with them ...
+
+        1. Count them - CHECK
+
+        2. Get and count the unique well analyzed word types - CHECK
+
+        3. Get a list of well analyzed word types with a unique most common
+           analysis; this is the "gold standard" that the ideal parser will encode. - CHECK
+
+        4. Create a pickle file containing the gold standard
+
+        5. Create a new form object in the database for each well analyzed word
+           type and tag each of these form objects as a "well analyzed word". - CHECK
+
+        6. Create a corpus that contains all of these well analyzed word types.
+           This should be used as the rules corpus for the morphologies of parsers. - CHECK
+
+        7. Create a corpus that contains all of the gold standard well analyzed
+           word types.  This should be used to create the training/test set
+           corpora for training LMs and testing parsers. - CHECK
+
+        8. Create 5 training/test set (90%/10%) corpus pairs built from the
+           elements in the gold standard corpus; each parser should have 5
+           different versions, each with a LM built from a given training set and
+           each tested against the corresponding training set.
+
+        9. Print the gold standard to a file that is a bunch of test declarations and
+           see how many of them the phonology passes!
+
+        """
+
+
+        gold_corpus = self.old.get('corpora/370')
+        gold_forms = self.get_corpus_forms(gold_corpus)
+        with codecs.open('gold_tests_no_accents.txt', 'w', 'utf8') as f:
+            for gold_form in gold_forms:
+                line = (u'#test %s -> %s\n' % (gold_form['morpheme_break'], gold_form['transcription'])).replace(
+                        u'a\u0301', u'a').replace(u'i\u0301', u'i').replace(u'o\u0301', u'o')
+                f.write(line)
+
+
+
+
+
+        """
+        corpora = {}
+
+        log.info(u'Creating and pickling locally a corpus of forms that contain well analyzed words.')
+        corpus = self.create_well_analyzed_words_corpus(force_recreate=force_recreate, **kwargs)
+        name = corpus['name']
+        key = 'corpora'
+
+        tokens_filename = u'well_analyzed_word_tokens.pickle'
+        tokens_file_path = os.path.join(self.localstore, key, tokens_filename)
+
+        filename = u'well_analyzed_words.pickle' 
+        file_path = os.path.join(self.localstore, key, filename)
+
+        record = self.record.get(key, {}).get(name, {})
+        if record.get('saved_locally') and not force_recreate:
+            word_tokens = cPickle.load(open(tokens_file_path, 'rb'))
+        else:
+            log.info('requesting forms of corpus')
+            forms = self.get_corpus_forms(corpus)
+            log.info('got forms of corpus')
+            log.info('extracting word tokens from forms of corpus')
+            word_tokens = self.get_word_tokens(forms, filter_=True) # This is a list of (tr, mb, mg, scs) 4-tuples
+            log.info('done extracting word tokens from forms of corpus')
+            cPickle.dump(word_tokens, open(tokens_file_path, 'wb'))
+            assert os.path.isfile(tokens_file_path)
+
+        def latex_accents(input_):
+            return input_.replace(u'a\u0301', u"\\'a")\
+                .replace(u'i\u0301', u"\\'i")\
+                .replace(u'o\u0301', u"\\'o")
+
+        # Print to stdout how many waw tokens and types there are
+        word_types = list(set(word_tokens))
+        print '\nSummary'
+        print '-' * 80
+        print '\nThere are %d well analyzed word tokens' % len(word_tokens)
+        print 'There are %d well analyzed word types' % len(word_types)
+        print
+
+        # Create a form object for each of the 3,414 well analyzed word types
+        self.create_form_for_each_well_analyzed_word(word_types)
+
+
+        # Create a form search that returns these well analyzed word types.
+        waw_search_name = u'Search that returns a set of forms where each represents a unique well-analyzed word'
+        query = {'filter': ['Tag', 'name', '=', u'well analyzed word']}
+        params = self.old.form_search_create_params.copy()
+        params.update({'name': waw_search_name, 'search': query, 'description': u''})
+        create_response = self.old.post('formsearches', params)
+        if create_response.get('errors') and 'name' in create_response['errors']:
+            waw_search = self.old.search('formsearches',
+                {'query': {'filter': ['FormSearch', 'name', '=', waw_search_name]}})[0]
+            if waw_search['search'] != query:
+                waw_search = self.old.put('formsearches/%s' % waw_search['id'], params)
+        elif create_response.get('id'):
+            waw_search = create_response
+        else:
+            log.info(create_response)
+            raise Exception('Unable to create search named "%s".' % waw_search_name)
+
+        # Create a corpus in the OLD database containing these well analyzed word types.
+        corpus_name = u'Corpus where each form is a representation of a unique well-analyzed word'
+        corpus = self.create_corpus(corpus_name, search_id=waw_search['id'])
+        log.info(u'Corpus "%s" created.' % corpus_name)
+        log.info(u'Getting all forms in this corpus: %s' % corpus_name)
+        #waw_type_forms = self.get_corpus_forms(corpus) # This is a list of 3,414 dict representations of forms.
+        log.info(u'All forms in the well analyzed word types corpus retrieved')
+
+
+        # Get the Gold IDs and create a gold corpus with them
+        gold_ids = cPickle.load(open('gold_ids.pickle', 'rb'))
+
+        log.info('Create Gold corpus')
+        params = self.old.corpus_create_params.copy()
+        gold_id_str = u','.join(map(unicode, gold_ids))
+        params.update({'name': u'Gold', 'content': gold_id_str})
+        gold_corpus = self.old.post('corpora', params)
+
+        gold_len = len(gold_ids)
+        print gold_len
+        print gold_len * 6
+        ninety_mark = int(0.9 * gold_len)
+
+        # Create 5 training/test set corpus pairs from the gold data, via request
+        for i in range(1, 6):
+            log.info('Create Gold corpus training/test pair %d' %i)
+            random.shuffle(gold_ids)
+
+            train_corpus_name = u'Gold %d training' % i
+            train_set = gold_ids[:ninety_mark]
+            train_content = u','.join(map(unicode, train_set))
+            params = self.old.corpus_create_params.copy()
+            params.update({'name': train_corpus_name, 'content': train_content})
+            train_corpus = self.old.post('corpora', params)
+
+            test_corpus_name = u'Gold %d test' % i
+            test_set = gold_ids[ninety_mark:]
+            test_content = u','.join(map(unicode, test_set))
+            params = self.old.corpus_create_params.copy()
+            params.update({'name': test_corpus_name, 'content': test_content})
+            test_corpus = self.old.post('corpora', params)
+
+        #+-----+-----------------+
+        #| id  | name            |
+        #+-----+-----------------+
+        #| 358 | Gold            |
+        #| 359 | Gold 1 training |
+        #| 360 | Gold 1 test     |
+        #| 361 | Gold 2 training |
+        #| 362 | Gold 2 test     |
+        #| 363 | Gold 3 training |
+        #| 364 | Gold 3 test     |
+        #| 365 | Gold 4 training |
+        #| 366 | Gold 4 test     |
+        #| 367 | Gold 5 training |
+        #| 368 | Gold 5 test     |
+        #+-----+-----------------+
+
+
+
+
+        types = {} # dict from (tr, mb, mg, sc) tuples to counts
+        sc_types = {} # dict from sc values to counts
+        tr_types = {} # dict from tr values to analyses, i.e., (mb, mg, sc) triples
+        for tr, mb, mg, sc in word_tokens:
+            #word_token = (tr, mb, mg.lower(), sc) # Here is where I lowercase the morpheme gloss information
+            word_token = (tr, mb, mg, sc)
+            types.setdefault(word_token, 0)
+            types[word_token] += 1
+            sc_types.setdefault(sc, 0)
+            sc_types[sc] += 1
+            tr_types.setdefault(tr, []).append((mb, mg, sc))
+        types_list = sorted([(v, k) for k, v in types.iteritems()], reverse=True)
+
+        # Get the Gold Standard
+        # This is a list of all well analyzed word types with a single best analysis.
+        # If a transcription has only one good analysis, that is the gold parse.
+        # If a transcription has many good analyses, choose the one that is used most often.
+        # If there is no most often chosen good analysis, don't include this word.
+        gold = []
+        for tr, analyses in tr_types.iteritems():
+            if len(analyses) == 1:
+                gold.append((tr, analyses[0][0], analyses[0][1], analyses[0][2]))
+            else:
+                #print
+                #print 'Many good analyses for %s' % tr
+                tmp = {}
+                for analysis in analyses:
+                    tmp.setdefault(analysis, 0)
+                    tmp[analysis] += 1
+                tmp2 = sorted([(v, k) for k, v in tmp.items()], reverse=True)
+                #print 'Here they are'
+                #pprint.pprint(tmp2)
+                pg_count, possible_gold = tmp2[0]
+                if len([x for x in tmp.values() if x == pg_count]) == 1:
+                    #print 'Gold is %s %s %s' % possible_gold
+                    gold.append((tr, possible_gold[0], possible_gold[1], possible_gold[2]))
+                else:
+                    print 'No gold parse for %s :(' % tr
+                    pprint.pprint(tmp2)
+                    print
+
+        print '\n\n'
+        print 'There are %d Gold Parses' % len(gold)
+
+        # This is a really hacky way of tagging all of the gold waw forms as 'gold':
+        # The 'gold' tag has ID=15;
+        # So, just create 3,245 SQL statements to update the formtag table so that all 3,245 gold
+        # forms have the 'gold' tag. Then run mysql blaold_research < gold_tagger.sql
+        # Also, just pickle the IDs of all of the gold forms for later creation of training/test set pairs
+        gold_form_ids = []
+        for form_dict in waw_type_forms:
+            id_ = form_dict['id']
+            tr = form_dict['transcription']
+            mb = form_dict['morpheme_break']
+            mg = form_dict['morpheme_gloss']
+            scs = form_dict['syntactic_category_string']
+            if (tr, mb, mg, scs) in gold:
+                gold_form_ids.append(id_)
+        print 'Found the id values of %d gold forms' % len(gold_form_ids)
+        with open('gold_tagger.sql', 'w') as f:
+            for gold_id in gold_form_ids:
+                f.write('INSERT INTO formtag (form_id, tag_id) VALUES (%d, 15);\n' % gold_id)
+        cPickle.dump(gold_form_ids, open('gold_ids.pickle', 'wb'))
+
+
+
+
+        # Create a corpus that contains all of the gold standard well analyzed
+        # word types.  This should be used to create the training/test set
+        # corpora for training LMs and testing parsers.
+
+
+        # PLACE THE TRIPLE QUOTES HERE!!!
+
+
+        print '\n\n'
+        print 'Most common well analyzed words'
+        print '-' * 80
+        for count, (tr, mb, mg, sc) in types_list[:20]:
+            print latex_accents(u'%s & %s & %s & %s & %d \\\\' % (tr, mb, mg, sc, count))
+
+        verbals = []
+        nominals = []
+        for count, (tr, mb, mg, sc) in types_list:
+            if len(verbals) < 20 or len(nominals) < 20:
+                if set(['vti', 'vta', 'vrt', 'vai', 'vii']) & set(sc.split('-')):
+                    verbals.append((count, tr, mb, mg, sc))
+                if set(['nan', 'nin', 'nar', 'nir']) & set(sc.split('-')):
+                    nominals.append((count, tr, mb, mg, sc))
+            else:
+                break
+        verbals = sorted(verbals[:20], reverse=True)
+        nominals = sorted(nominals[:20], reverse=True)
+
+        print '\n\n'
+        print 'Most common well analyzed verbal forms'
+        print '-' * 80
+        for count, tr, mb, mg, sc in verbals:
+            print latex_accents(u'%s & %s & %s & %s & %d \\\\' % (tr, mb, mg, sc, count))
+
+        print '\n\n'
+        print 'Most common well analyzed verbal forms'
+        print '-' * 80
+        for count, tr, mb, mg, sc in nominals:
+            print latex_accents(u'%s & %s & %s & %s & %d \\\\' % (tr, mb, mg, sc, count))
+
+        sc_types = sorted([(v, k) for k, v in sc_types.iteritems()], reverse=True)
+        print '\n\n'
+        print 'Most common category strings'
+        print '-' * 80
+        for count, sc in sc_types[:20]:
+            print latex_accents(u'%s & %d \\\\' % (sc, count))
+
+        corpus.update({
+            'saved_locally': True,
+            'local_copy_path': file_path
+        })
+
+        record.update(corpus)
+        self.record[key][name] = record
+        self.dump_record()
+        log.info(u'Corpus "%s" has been saved locally.' % name)
+        return record
+
+
+
+
+
+        corpora[well_analyzed_words_corpus['name']] = well_analyzed_words_corpus
+        return corpora
+        """
+
+
+
+        """
+
+
+        waw_meta = corpora[u'Corpus of forms that contain well analyzed Blackfoot words']
+        waw = cPickle.load(open(waw_meta['local_copy_path'], 'rb'))
+        waw_dict = {}
+        for tr, mb, mg, sc in waw:
+            waw_dict.setdefault(tr, []).append((mb, mg, sc))
+        multiples = {}
+        uniques = {}
+        for tr, ana in waw_dict.iteritems():
+            if len(ana) > 1:
+                multiples[tr] = ana
+            else:
+                uniques[tr] = ana[0]
+        print len(waw)
+        print len(uniques)
+        k = multiples.keys()[1]
+        v = multiples[k]
+        print k
+        print
+        for br, gl, sc in v:
+            print br
+            print gl
+            print sc
+            print
+        """
+
+    def create_form_for_each_well_analyzed_word(self, waw_types):
+        """Create a form object for each of the well analyzed words provided in ``waw_types``.
+
+        Warning: this creates some 3,400 form objects by request, one at a
+        time; so it can take a while. The second time it is run, it won't
+        recreate them and it'll be faster.
+        Warning 2: it's really weird that I made 'well analyzed word' the
+        category!  I meant to create a 'well analyzed word' tag and use that...
+        So I just did it manually via MySQL (35 is the id of the waw category
+        and 14 is the id of the waw tag): mysql> insert into formtag (form_id,
+        tag_id) select id, 14 from form where syntacticcategory_id=35; print
+        waw_types is a list of (tr, mb, mg, scs) 4-tuples.
+
+        """
+
+        waw_name = u'well analyzed word'
+        waw_cat = self.old.create('syntacticcategories', {
+            'name': waw_name,
+            'type': u'',
+            'description': u'Specialized category for the 3414 well analyzed word types discovered in the database.'})
+        if 'errors' in waw_cat: # This will happen if we've created this category already ...
+            waw_cat = [sc for sc in self.old.get('syntacticcategories') if sc['name'] == waw_name][0]
+
+        waws = self.old.search('forms',
+            {'query': {'filter': ['Form', 'syntactic_category', 'name', '=', waw_name]}})
+        if len(waws) == 0:
+            for tr, mb, mg, scs in waw_types:
+                params = self.old.form_create_params.copy()
+                params.update({
+                    'grammaticality': u'',
+                    'transcription': tr,
+                    'morpheme_break': mb,
+                    'morpheme_gloss': mg,
+                    'translations': [{'transcription': mg, 'grammaticality': u''}],
+                    'syntactic_category': waw_cat['id'],
+                    'comments': u"Created programmatically; identified as a well analyzed word in the data set."
+                })
+                form = self.old.post('forms', params)
+
+            waws = self.old.search('forms',
+                {'query': {'filter': ['Form', 'syntactic_category', 'name', '=', waw_name]}})
+        print 'There are %d well analyzed word forms are now in the database' % len(waws)
+
+
     def create_corpora(self, force_recreate=False, **kwargs):
         """Create a bunch of corpora and pickle them locally.
 
@@ -1171,6 +1883,8 @@ class BlackfootParserResearcher(ParserResearcher):
         #corpora[words_corpus['name']] = words_corpus
         #corpora[analyzed_words_corpus['name']] = analyzed_words_corpus
         corpora[well_analyzed_words_corpus['name']] = well_analyzed_words_corpus
+        
+        """
 
         # Create a corpus of well-analyzed words from Weber 2013.
         researcher.create_weber_2013_well_analyzed_words_corpus(force_recreate=True)
@@ -1214,8 +1928,47 @@ class BlackfootParserResearcher(ParserResearcher):
                 corpus = self.save_well_analyzed_words_corpus(
                     force_recreate=force_recreate, relation=relation, attribute=attribute, value=value)
                 corpora[corpus['name']] = corpus
+        """
         return corpora
 
+    def get_corpora_locally(self, force_recreate=False, **kwargs):
+        """Get the following corpora and save them locally.
+        372, "Gold 1 test"
+        374, "Gold 2 test"
+        376, "Gold 3 test"
+        378, "Gold 4 test"
+        380, "Gold 5 test"
+
+        """
+
+        log.info(u'Getting gold test set corpora locally.')
+        corpora = {}
+        key = 'corpora'
+        for index, corpus_id in ((1, 372), (2, 374), (3, 376), (4, 378), (5, 380)):
+            corpus = self.old.get('corpora/%d' % corpus_id)
+            filename = u'gold_%d_corpus.pickle' % index
+            name = corpus['name']
+            record = self.record.get(key, {}).get(name, {})
+            if record.get('saved_locally') and not force_recreate:
+                log.info(u'Corpus "%s" has already been saved locally.' % name)
+                corpora[name] = record
+            else:
+                forms = self.get_corpus_forms(corpus)
+                form_words = self.get_form_words(forms, filter_=True)
+                file_path = os.path.join(self.localstore, key, filename)
+                cPickle.dump(form_words, open(file_path, 'wb'))
+                assert os.path.isfile(file_path)
+                corpus.update({
+                    'saved_locally': True,
+                    'local_copy_path': file_path
+                })
+                record.update(corpus)
+                self.record[key][name] = record
+                self.dump_record()
+                log.info(u'Corpus "%s" has been saved locally.' % name)
+                corpora[name] = record
+        log.info(u'Done getting gold test set corpora locally.')
+        return corpora
 
     def remove_unwanted_characters(self, unistr):
         """Unwanted characters (mainly punctuation) can be removed and the resulting
@@ -1283,7 +2036,7 @@ class BlackfootParserResearcher(ParserResearcher):
         return list(transcriptions)
 
 
-    def parse_corpus(self, parser, corpus, batch_size=0):
+    def parse_corpus(self, parser, corpus, batch_size=0, preflight=lambda x: x):
         """Parse all of the transcriptions in the locally saved corpus using the
         locally saved parser.
 
@@ -1302,8 +2055,14 @@ class BlackfootParserResearcher(ParserResearcher):
         3.
 
         """
+        #batch_size = 1 # DELETE ME, I AM FOR TESTING !!!
+        batch_size = 20 # DELETE ME, I AM FOR TESTING !!!
+
+
         print 'in parse_corpus in blackfoot_research.py'
         corpus_list = cPickle.load(open(corpus['local_copy_path'], 'rb'))
+        #corpus_list = [(preflight(t), m, g, c) for t, m, g, c in corpus_list[:100]] # WARNING: remove the 100 cap!
+        corpus_list = [(preflight(t), m, g, c) for t, m, g, c in corpus_list] # WARNING: remove the 100 cap!
         transcriptions = self.clean_corpus(corpus_list)
         log.info('About to parse all %s unique transcriptions in corpus "%s".' % (
             len(transcriptions), corpus['name']))
@@ -1476,7 +2235,7 @@ if __name__ == '__main__':
 
     # GLOBAL: Determines whether resources are regenerated/recreated/recompiled even
     # when said resources have been persisted.
-    force_recreate = False
+    force_recreate = True
 
     # This will reset the pickled record of the researcher to an empty dict.
     # Calling ``clear_record()`` is necessary for forcing the researcher to
@@ -1493,16 +2252,372 @@ if __name__ == '__main__':
     #researcher.old.delete('morphologies/57')
     #researcher.old.delete('morphemelanguagemodels/37')
     #researcher.old.delete('morphologicalparsers/47')
+    #researcher.old.delete('corpora/333')
+
+
+    # Phonologies
+    ################################################################################
+    # The run_phonology_tests method runs the tests in a defined phonology. Very
+    # useful for test-driven phonology composition!
+    # This creates phonology #50 "Blackfoot phonology from Frantz (1991)"
+
+    #phonology = researcher.create_phonology_frantz91(force_recreate=True)
+    #unsuccessful, test_count = researcher.run_phonology_tests(phonology)
+
+
+    # This creates phonology #51 "Blackfoot phonology from Frantz (1991) with prominence and length distinctions flattened"
+    #flattener_phonology = researcher.create_phonology_frantz91_flattener(force_recreate=True)
+    #unsuccessful, test_count = researcher.run_phonology_tests(phonology)
+
+
+    # Morphologies
+    ################################################################################
+    # The create_morphology_frantz95_waw method creates a morphology with the standard
+    # lexicon corpus (basically the lexicon of the dictionary) and with a rules corpus
+    # that is the corpus of 3,414 well analyzed word types present in the database.
+
+    #morphology = researcher.create_morphology_frantz95_waw(force_recreate=True)
+
+
+    # LMs
+    ################################################################################
+    # Create language models for each of the training set corpora drawn from the
+    # gold standard corpus, i.e.,
+    # 371 Gold 1 training, 373 Gold 2 training, 375 Gold 3 training, 377 Gold 4 training, 379 Gold 5 training
+    # This gives me:
+    # 40 Language model based on corpus #371 "Gold 1 training".
+    # 41 Language model based on corpus #371 "Gold 2 training".
+    # 42 Language model based on corpus #371 "Gold 3 training".
+    # 43 Language model based on corpus #371 "Gold 4 training".
+    # 44 Language model based on corpus #371 "Gold 5 training
+    # NOTE: add 5 to all of the LM ids listed above (changes made!)
+
+    #researcher.create_gold_language_model()
+    #researcher.create_gold_language_model_categorial()
+
+
+    # Well Analyzed Words
+    ################################################################################
+
+    # Gather up all of the well analyzed words from the non-mono-morphemic
+    # forms in the database. Then print how many there are, how many unique
+    # well analyzed word types there are, save a pickled dict of the gold 
+    # standard (i.e., the well analyzed words with a single most common analysis)
+    # (for later testing), and enter all of the well analyzed word types into
+    # the database for later use in the creation of morphologies and language
+    # models.
+    #force_recreate = False
+    #researcher.get_well_analyzed_words(force_recreate=force_recreate)
+
 
     # Corpora
     ################################################################################
 
     # Create a bunch of corpora that will be useful later on. This can take a while,
     # but the corpora are persisted as pickles, so it should only need to be done once.
-    # I.e., researcher.record['corpora'] wil contain the corpus metadata and
-    # localstore/corpora will contain the corpus pickles.
+    # I.e., researcher.record['corpora'] will contain the corpus metadata and
+    # localstore/corpora/ will contain the corpus pickle files.
     #corpora = researcher.create_corpora(force_recreate=force_recreate)
-    corpora = researcher.record['corpora']
+
+    # Get the corpora already created by the create_corpora method of the researcher.
+    #corpora = researcher.record['corpora']
+
+    # Save the test set gold standard corpora locally
+    #corpora = researcher.get_corpora_locally(force_recreate=force_recreate)
+
+
+    """
+    # Thesis Parser 1
+    ################################################################################
+    # This is one parser that is recreated five times with the five gold standard
+    # training set-derived LMs (see above) and then tested with the relevant test set.
+
+    # Phonology: #50 "Blackfoot phonology from Frantz (1991)"
+    # Morphology: #61 "Morphology with morphotactics drawn from well analyzed words in the data set"
+    # Language Models: 
+    #     #40 "Language model based on corpus 'Gold 1 training'."
+    #     #41 "Language model based on corpus 'Gold 2 training'."
+    #     #42 "Language model based on corpus 'Gold 3 training'."
+    #     #43 "Language model based on corpus 'Gold 4 training'."
+    #     #44 "Language model based on corpus 'Gold 5 training'."
+
+    #for lm_id in (45, 46, 47, 48, 49):
+    #    researcher.create_thesis_parser_1(lm_id, force_recreate=True)
+    #    print '\n\n\n'
+
+    # The result of the above is that I have the following parsers (saved locally too):
+    #     #55 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #40"
+    #     #51 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #41"
+    #     #52 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #42"
+    #     #53 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #43"
+    #     #54 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #44"
+
+    # Run the basic tests on one of the parsers:
+    # Note that parser 54 incorrectly parses nitsspiyi as nit|1|agra-sspi|among|adt-yi|0|agrb,
+    # probably because of the LM ...
+    # record = cPickle.load(open('record.pickle', 'rb'))
+    # parsers = record['parsers']
+    # parser_54 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #44']
+    # researcher.test_parser(parser_54)
+
+    # Test the parser on its test sets ...
+    # Test the parser against all corpora and generate a list of success/failure summaries
+    # for each parser-corpus pair. WARNING: takes about 2-3 mins. However, the summaries are
+    # cached and the cached data can be retrieved by setting ``force_recreate`` to False.
+
+    record = cPickle.load(open('record.pickle', 'rb'))
+    parsers = record['parsers']
+    parser_55 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #45']
+    parser_51 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #46']
+    parser_52 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #47']
+    parser_53 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #48']
+    parser_54 = parsers['Morphological parser for Blackfoot as described in Dunham (2014) with LM #49']
+
+
+    corpora = researcher.get_corpora_locally(force_recreate=force_recreate)
+    parser_55_test_set_corpus = {u'Gold_1_test': corpora[u'Gold 1 test']}
+    parser_51_test_set_corpus = {u'Gold_2_test': corpora[u'Gold 2 test']}
+    parser_52_test_set_corpus = {u'Gold_3_test': corpora[u'Gold 3 test']}
+    parser_53_test_set_corpus = {u'Gold_4_test': corpora[u'Gold 4 test']}
+    parser_54_test_set_corpus = {u'Gold_5_test': corpora[u'Gold 5 test']}
+
+    parser_55_summaries = researcher.evaluate_parser_against_corpora(parser_55,
+        parser_55_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True)[0]
+    parser_51_summaries = researcher.evaluate_parser_against_corpora(parser_51,
+        parser_51_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True)[0]
+    parser_52_summaries = researcher.evaluate_parser_against_corpora(parser_52,
+        parser_52_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True)[0]
+    parser_53_summaries = researcher.evaluate_parser_against_corpora(parser_53,
+        parser_53_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True)[0]
+    parser_54_summaries = researcher.evaluate_parser_against_corpora(parser_54,
+        parser_54_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True)[0]
+
+    summaries = (parser_55_summaries, parser_51_summaries, parser_52_summaries,
+            parser_53_summaries, parser_54_summaries)
+
+    #pp.pprint(parser_55_summaries)
+    #print
+    #pp.pprint(parser_51_summaries)
+    #print
+    #pp.pprint(parser_52_summaries)
+    #print
+    #pp.pprint(parser_53_summaries)
+    #print
+    #pp.pprint(parser_54_summaries)
+
+    evaluation = {}
+    for key in summaries[0].keys():
+        try:
+            value = sum(s[key] for s in summaries) / float(len(summaries))
+            evaluation[key] = value
+        except:
+            pass
+    pprint.pprint(evaluation)
+    """
+
+
+
+    """
+    # Thesis Parser 2 -- Frantz (1991) phon *FLATTENED*, F&R (1995) lexicon
+    ################################################################################
+    # This is one parser that is recreated five times with the five gold standard
+    # training set-derived LMs (see above) and then tested with the relevant test set.
+
+    # Phonology: #51 "Blackfoot phonology from Frantz (1991) with prominence and length distinctions flattened"
+    # Morphology: #61 "Morphology with morphotactics drawn from well analyzed words in the data set"
+    # Language Models: 
+    #     #40 "Language model based on corpus 'Gold 1 training'."
+    #     #41 "Language model based on corpus 'Gold 2 training'."
+    #     #42 "Language model based on corpus 'Gold 3 training'."
+    #     #43 "Language model based on corpus 'Gold 4 training'."
+    #     #44 "Language model based on corpus 'Gold 5 training'."
+
+    #for lm_id in (45, 46, 47, 48, 49):
+        #researcher.create_thesis_parser_2(lm_id, force_recreate=True)
+        #print '\n\n\n'
+
+    # The result of the above is that I have the following parsers (saved locally too):
+    #     #55 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #40"
+    #     #51 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #41"
+    #     #52 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #42"
+    #     #53 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #43"
+    #     #54 "Morphological parser for Blackfoot as described in Dunham (2014) with LM #44"
+
+    # Test the parser on its test sets ...
+    # Test the parser against all corpora and generate a list of success/failure summaries
+
+    # This flattener function removes accent marking on vowels and shortens all long
+    # segments. It should do exactly what the shorten and noAccentedVowels FSTs do
+    # in the phonology of this parser.
+    def flattener(input_):
+        p = re.compile(u'([ptkmnsaio])(\\1)*')
+        return p.sub('\\1', input_.replace(u'a\u0301', u'a').replace(
+            u'i\u0301', u'i').replace(u'o\u0301', u'o'))
+
+    record = cPickle.load(open('record.pickle', 'rb'))
+    parsers = record['parsers']
+    parser_61 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #45']
+    #parser_62 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #46']
+    #parser_63 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #47']
+    #parser_64 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #48']
+    #parser_65 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #49']
+
+    #corpora = researcher.get_corpora_locally(force_recreate=force_recreate)
+    corpora = record['corpora']
+    parser_61_test_set_corpus = {u'Gold_1_test': corpora[u'Gold 1 test']}
+    #parser_62_test_set_corpus = {u'Gold_2_test': corpora[u'Gold 2 test']}
+    #parser_63_test_set_corpus = {u'Gold_3_test': corpora[u'Gold 3 test']}
+    #parser_64_test_set_corpus = {u'Gold_4_test': corpora[u'Gold 4 test']}
+    #parser_65_test_set_corpus = {u'Gold_5_test': corpora[u'Gold 5 test']}
+    pprint.pprint(parser_61_test_set_corpus)
+
+    # Note how the flattener function is passed as the preflight kw argument in the following ...
+    parser_61_summaries = researcher.evaluate_parser_against_corpora(parser_61,
+        parser_61_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_62_summaries = researcher.evaluate_parser_against_corpora(parser_62,
+        parser_62_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_63_summaries = researcher.evaluate_parser_against_corpora(parser_63,
+        parser_63_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_64_summaries = researcher.evaluate_parser_against_corpora(parser_64,
+        parser_64_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_65_summaries = researcher.evaluate_parser_against_corpora(parser_65,
+        parser_65_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+
+    summaries = (parser_61_summaries, parser_62_summaries, parser_63_summaries,
+            parser_64_summaries, parser_65_summaries)
+
+    evaluation = {}
+    for key in summaries[0].keys():
+        try:
+            value = sum(s[key] for s in summaries) / float(len(summaries))
+            evaluation[key] = value
+        except:
+            pass
+    pprint.pprint(evaluation)
+    """
+    
+
+    # Thesis Parser 2b -- Frantz (1991) phon *FLATTENED*, F&R (1995) lexicon, CATEGORIAL!!!
+    ################################################################################
+    # This is one parser that is recreated five times with the five gold standard
+    # training set-derived CATEGORIAL LMs (see above) and then tested with the relevant test set.
+
+    # Phonology: #51 "Blackfoot phonology from Frantz (1991) with prominence and length distinctions flattened"
+    # Morphology: #61 "Morphology with morphotactics drawn from well analyzed words in the data set"
+    # Language Models: 
+    #     #54 'Categorial Language model based on corpus #371 "Gold 1 training".'
+    #     #55 'Categorial Language model based on corpus #373 "Gold 2 training".'
+    #     #56 'Categorial Language model based on corpus #375 "Gold 3 training".'
+    #     #57 'Categorial Language model based on corpus #377 "Gold 4 training".'
+    #     #58 'Categorial Language model based on corpus #379 "Gold 5 training".'
+
+    #for lm_id in (54, 55, 56, 57, 58):
+        #researcher.create_thesis_parser_2(lm_id, force_recreate=True)
+        #print '\n\n\n'
+
+    # The result of the above is that I have the following parsers (saved locally too):
+    #     #66 'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #54'
+    #     #67 'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #55'
+    #     #68 'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #56'
+    #     #69 'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #57'
+    #     #70 'Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #58'
+
+    # Test the parser on its test sets ...
+    # Test the parser against all corpora and generate a list of success/failure summaries
+
+    def flattener(input_):
+        p = re.compile(u'([ptkmnsaio])(\\1)*')
+        return p.sub('\\1', input_.replace(u'a\u0301', u'a').replace(
+            u'i\u0301', u'i').replace(u'o\u0301', u'o'))
+
+    record = cPickle.load(open('record.pickle', 'rb'))
+    parsers = record['parsers']
+    parser_66 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #54']
+    parser_67 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #55']
+    parser_68 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #56']
+    parser_69 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #57']
+    parser_70 = parsers['Morphological parser #2 ("Flattener") for Blackfoot as described in Dunham (2014) with LM #58']
+
+    #corpora = researcher.get_corpora_locally(force_recreate=force_recreate)
+    corpora = record['corpora']
+    parser_66_test_set_corpus = {u'Gold_1_test': corpora[u'Gold 1 test']}
+    parser_67_test_set_corpus = {u'Gold_2_test': corpora[u'Gold 2 test']}
+    parser_68_test_set_corpus = {u'Gold_3_test': corpora[u'Gold 3 test']}
+    parser_69_test_set_corpus = {u'Gold_4_test': corpora[u'Gold 4 test']}
+    parser_70_test_set_corpus = {u'Gold_5_test': corpora[u'Gold 5 test']}
+
+    # Note how the flattener function is passed as the preflight kw argument in the following ...
+    parser_66_summaries = researcher.evaluate_parser_against_corpora(parser_66,
+        parser_66_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_67_summaries = researcher.evaluate_parser_against_corpora(parser_67,
+        parser_67_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_68_summaries = researcher.evaluate_parser_against_corpora(parser_68,
+        parser_68_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_69_summaries = researcher.evaluate_parser_against_corpora(parser_69,
+        parser_69_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+    parser_70_summaries = researcher.evaluate_parser_against_corpora(parser_70,
+        parser_70_test_set_corpus, force_recreate=True, get_phonology_success=True,
+        test_phonology=True, preflight=flattener)[0]
+
+    summaries = (parser_66_summaries, parser_67_summaries, parser_68_summaries,
+            parser_69_summaries, parser_70_summaries)
+
+    evaluation = {}
+    for key in summaries[0].keys():
+        try:
+            value = sum(s[key] for s in summaries) / float(len(summaries))
+            evaluation[key] = value
+        except:
+            pass
+    pprint.pprint(evaluation)
+
+
+
+
+    """
+    # All this stuff is about trying to see why the parser is not handling
+    # unicode characters correctly. The phonology does just fine and so does the morphology;
+    # The problem seems to be the morphophonology...
+    # Proposed solution: change the morphology to regex, not lexc, and see what happens ...
+    transcriptions = [u'nitsspiyi', u'nita\u0301i\u0301hpiyi']
+    morpheme_sequences = [u'nit-ihpiyi', u'nit-a\u0301-ihpiyi']
+    parses = researcher.parse(parser_54, transcriptions)
+    pprint.pprint(parses) # the one with the accents will have no parses ...
+    srs = researcher.get_parse_module(parser_54).phonology.applydown(morpheme_sequences)
+    pprint.pprint(srs) # the phonology can applydown the accent-containing morpheme sequence, no problem
+    morphology = researcher.get_parse_module(parser_54).morphology
+    morph_down = researcher.get_parse_module(parser_54).morphology.applydown(morpheme_sequences)
+    pprint.pprint(morph_down) # the morphology recognizes the accent-containing morpheme sequence, no problem
+    morph_up = researcher.get_parse_module(parser_54).morphology.applyup(morpheme_sequences)
+    pprint.pprint(morph_up)
+    parser_54_obj = researcher.get_parse_module(parser_54).parser
+    morphophon_up = parser_54_obj.applyup(transcriptions)
+    pprint.pprint(morphophon_up)
+    """
+
+
+
+
+
+
+
+
+
+    """
 
     # Restrict what we're working with to a subset of the corpora just created, if desired.
     #corpora = dict((key, value) for key, value in researcher.record['corpora'].iteritems()
@@ -1559,7 +2674,6 @@ if __name__ == '__main__':
 
 
 
-    """
 
     # Parser 2  "The Overgenerator"
     ################################################################################

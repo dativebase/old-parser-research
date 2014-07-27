@@ -23,6 +23,7 @@
 /localstore
 /detritus
 /notes
+/keepme
 
 # Pickle store of information gathered by the researcher
 record.pickle
